@@ -17,13 +17,12 @@ Hệ thống chỉ có hai vai trò con người: **Học viên** (Free/Premium)
 
 ## Kiến trúc
 
-Modular Monolith kết hợp một AI Worker tách biệt, giao tiếp qua hàng đợi.
+Modular Monolith (100% TypeScript) tích hợp module chấm điểm phát âm trực tiếp trong Core API.
 
 | Thành phần | Công nghệ | Thư mục |
 |---|---|---|
 | Giao diện | Next.js 14 (App Router), TypeScript, Tailwind CSS, Zustand, wavesurfer.js | `frontend/` |
-| Core API | NestJS, TypeORM, Passport/JWT, BullMQ | `backend-api/` |
-| AI Worker | Python 3.11, FastAPI, FFmpeg (pydub), Azure Speech SDK | `ai-worker/` |
+| Core API & Speech | NestJS, TypeORM, Passport/JWT, Azure Speech SDK, fluent-ffmpeg | `backend-api/` |
 | Dữ liệu | PostgreSQL 15 (JSONB), Redis 7, S3/MinIO | — |
 | Thanh toán | VNPAY (sandbox), Stripe | — |
 
@@ -35,8 +34,7 @@ Chi tiết xem tài liệu SRS trong thư mục [`docs/`](docs/).
 Shadowtation/
 ├── docs/            Tài liệu SRS và thiết kế
 ├── frontend/        Next.js
-├── backend-api/     NestJS (Core API)
-├── ai-worker/       Python FastAPI (xử lý chấm điểm AI)
+├── backend-api/     NestJS (Core API & Chấm điểm phát âm)
 ├── .env.example     Mẫu biến môi trường
 └── README.md
 ```
@@ -45,9 +43,8 @@ Shadowtation/
 
 - Git
 - Node.js LTS (20 trở lên)
-- Python 3.11
 - FFmpeg (có trong PATH)
-- Docker Desktop (chạy PostgreSQL và Redis)
+- PostgreSQL 15 và Redis 7 (chạy Docker hoặc dịch vụ Native/Cloud)
 
 ## Cài đặt và chạy (cập nhật dần theo tiến độ)
 

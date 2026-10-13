@@ -15,13 +15,6 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
-# ===== Python (ai-worker) =====
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.pytest_cache/
-.mypy_cache/
 
 # ===== Dữ liệu, media, upload =====
 uploads/

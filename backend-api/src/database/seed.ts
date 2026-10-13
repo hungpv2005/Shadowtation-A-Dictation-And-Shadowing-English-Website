@@ -25,14 +25,14 @@ const DEV_USERS: { email: string; fullName: string; role: UserRole; password: st
   {
     email: 'admin@shadowtation.local',
     fullName: 'Admin',
-    role: 'ADMIN',
+    role: UserRole.ADMIN,
     password: process.env.SEED_ADMIN_PASSWORD ?? 'Admin@123456',
   },
-  { email: 'student@shadowtation.local', fullName: 'Học viên Free', role: 'STUDENT', password: 'Student@123456' },
+  { email: 'student@shadowtation.local', fullName: 'Học viên Free', role: UserRole.STUDENT, password: 'Student@123456' },
   {
     email: 'premium@shadowtation.local',
     fullName: 'Học viên Premium',
-    role: 'PREMIUM_STUDENT',
+    role: UserRole.PREMIUM_STUDENT,
     password: 'Premium@123456',
     premiumDays: 30,
   },
