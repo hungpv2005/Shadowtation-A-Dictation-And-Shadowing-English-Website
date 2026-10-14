@@ -48,22 +48,31 @@ CREATE TABLE lessons (
   level           VARCHAR(20)  NOT NULL
                   CHECK (level IN ('BEGINNER','INTERMEDIATE','ADVANCED')),
   audio_url       VARCHAR(500) NOT NULL,
+  media_type      VARCHAR(20)  NOT NULL DEFAULT 'AUDIO'
+                  CHECK (media_type IN ('AUDIO','VIDEO','PODCAST')),
+  source_name     VARCHAR(150),
+  source_url      VARCHAR(500),
+  duration_seconds INTEGER,
+  created_by_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   is_premium_only BOOLEAN      NOT NULL DEFAULT FALSE,
   status          VARCHAR(20)  NOT NULL DEFAULT 'DRAFT'
                   CHECK (status IN ('DRAFT','PUBLISHED','ARCHIVED')),
   created_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_lessons_status_level ON lessons(status, level);
+CREATE INDEX idx_lessons_created_by_user ON lessons(created_by_user_id);
 
 CREATE TABLE lesson_sentences (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   lesson_id    UUID  NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+  order_index  INTEGER NOT NULL,
   start_time   REAL  NOT NULL,
   end_time     REAL  NOT NULL CHECK (end_time > start_time),
   text_content TEXT  NOT NULL,
   words_json   JSONB NOT NULL DEFAULT '[]'::jsonb
 );
 CREATE INDEX idx_lesson_sentences_lesson ON lesson_sentences(lesson_id, start_time);
+CREATE UNIQUE INDEX idx_lesson_sentences_order ON lesson_sentences(lesson_id, order_index);
 
 CREATE TABLE user_attempts (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),

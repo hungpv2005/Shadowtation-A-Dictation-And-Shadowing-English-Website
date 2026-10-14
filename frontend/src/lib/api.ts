@@ -9,11 +9,17 @@ export class ApiError extends Error {
   }
 }
 
-/** Gọi Core API. Từ GĐ3 sẽ tự gắn JWT và tự refresh token tại đây. */
+/** Gọi Core API và gửi JWT nếu người dùng đã đăng nhập ở trình duyệt. */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (typeof window !== 'undefined' && !headers.has('Authorization')) {
+    const token = localStorage.getItem('access_token') ?? localStorage.getItem('accessToken');
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+  }
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+    headers,
     cache: 'no-store',
   });
   if (!res.ok) {

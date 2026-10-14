@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { AppShell } from './app-shell';
 
 export const metadata: Metadata = {
   title: 'Shadowtation - Dictation & Shadowing English',
@@ -14,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className="bg-slate-50 text-slate-900 min-h-screen">
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
