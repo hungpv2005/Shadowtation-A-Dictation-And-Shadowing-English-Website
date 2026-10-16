@@ -23,3 +23,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     return super.canActivate(context);
   }
 }
+
+@Injectable()
+export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
+  handleRequest<TUser = any>(err: any, user: any): TUser {
+    if (err || !user) {
+      return null as TUser;
+    }
+    return user;
+  }
+}

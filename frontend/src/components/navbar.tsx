@@ -46,6 +46,17 @@ export default function Navbar() {
           </span>
         </Link>
 
+        {/* Navigation Links */}
+        <nav className="flex items-center gap-6">
+          <Link
+            href="/practice/dictation"
+            className="text-sm font-semibold text-slate-700 hover:text-indigo-600 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-100/70"
+          >
+            <Headphones className="w-4 h-4 text-indigo-500" />
+            <span>Luyện nghe (Dictation)</span>
+          </Link>
+        </nav>
+
         {/* User Area */}
         <div className="flex items-center gap-4">
           {!mounted ? (

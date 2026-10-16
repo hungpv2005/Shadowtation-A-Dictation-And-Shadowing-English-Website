@@ -120,6 +120,15 @@ export default function Home() {
               <span>Lưu từ vựng yếu vào Review List tự động</span>
             </li>
           </ul>
+          <div className="mt-5">
+            <Link
+              href="/practice/dictation"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl transition-colors"
+            >
+              <span>Vào luyện nghe ngay</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
         </div>
 
         {/* Shadowing Card */}
