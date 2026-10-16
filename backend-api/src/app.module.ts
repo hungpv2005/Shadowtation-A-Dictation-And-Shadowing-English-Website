@@ -8,6 +8,7 @@ import { ThrottlerModule, seconds } from '@nestjs/throttler';
 import { SpeechModule } from './speech/speech.module';
 import { DictationModule } from './practice/dictation/dictation.module';
 import { AuthModule } from './auth/auth.module';
+import { SubscriptionModule } from './subscription/subscription.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { AuthModule } from './auth/auth.module';
     SpeechModule,
     DictationModule,
     AuthModule,
+    SubscriptionModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
