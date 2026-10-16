@@ -2,48 +2,19 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
-import { Headphones, Mic, CheckCircle2, Flame, ArrowRight, ShieldCheck, Database } from 'lucide-react';
-
-type Health = { status: string; database: string; timestamp: string };
+import { Headphones, Mic, CheckCircle2, Flame, ArrowRight } from 'lucide-react';
 
 export default function Home() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const { user, isAuthenticated } = useAuthStore();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    apiFetch<Health>('/health')
-      .then(setHealth)
-      .catch((e: Error) => setError(e.message));
   }, []);
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-12">
-      {/* System Status Bar */}
-      <div className="mb-8 flex items-center justify-between p-3.5 bg-white border border-slate-200/80 rounded-2xl shadow-sm text-xs text-slate-600">
-        <div className="flex items-center gap-2">
-          <Database className="w-4 h-4 text-indigo-600" />
-          <span>Hạ tầng CSDL (Neon.tech Cloud):</span>
-          {health ? (
-            <span className="inline-flex items-center gap-1 font-semibold text-emerald-600">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Sẵn sàng (DB: {health.database})
-            </span>
-          ) : error ? (
-            <span className="font-semibold text-red-600">Lỗi kết nối</span>
-          ) : (
-            <span className="text-slate-400">Đang kiểm tra...</span>
-          )}
-        </div>
-        <div className="hidden sm:flex items-center gap-1.5 text-slate-500">
-          <ShieldCheck className="w-4 h-4 text-emerald-500" />
-          <span>Xác thực JWT (UC-01) hoạt động</span>
-        </div>
-      </div>
 
       {/* Hero Section */}
       <div className="text-center py-10 max-w-2xl mx-auto">

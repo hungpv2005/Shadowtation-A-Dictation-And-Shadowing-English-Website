@@ -3,6 +3,7 @@ import {
   ConflictException,
   UnauthorizedException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -11,10 +12,13 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { MoreThan, Repository } from 'typeorm';
 import { RefreshToken } from '../database/entities/refresh-token.entity';
+import { PasswordResetToken } from '../database/entities/password-reset-token.entity';
 import { User, UserRole } from '../database/entities/user.entity';
 import { AuthResponseDto, UserProfileDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -23,6 +27,8 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepository: Repository<RefreshToken>,
+    @InjectRepository(PasswordResetToken)
+    private readonly passwordResetTokenRepository: Repository<PasswordResetToken>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
@@ -181,5 +187,79 @@ export class AuthService {
       throw new NotFoundException('Không tìm thấy thông tin người dùng');
     }
     return this.sanitizeUser(user);
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ success: boolean; message: string }> {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy tài khoản với email này. Vui lòng kiểm tra lại.');
+    }
+
+    if (!user.isActive) {
+      throw new BadRequestException('Tài khoản này hiện đang bị tạm khóa. Vui lòng liên hệ Admin.');
+    }
+
+    if (!dto.newPassword || dto.newPassword.length < 6) {
+      throw new BadRequestException('Mật khẩu mới phải có ít nhất 6 ký tự.');
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(dto.newPassword, salt);
+
+    user.passwordHash = passwordHash;
+    await this.userRepository.save(user);
+
+    // Thu hồi các refresh token cũ để bảo vệ an toàn cho tài khoản
+    await this.refreshTokenRepository.update(
+      { userId: user.id, revokedAt: undefined },
+      { revokedAt: new Date() },
+    );
+
+    return {
+      success: true,
+      message: 'Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay bằng mật khẩu mới.',
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ success: boolean; message: string }> {
+    const tokenHash = this.hashToken(dto.token.trim());
+
+    const tokenRecord = await this.passwordResetTokenRepository.findOne({
+      where: {
+        tokenHash,
+        expiresAt: MoreThan(new Date()),
+      },
+    });
+
+    if (!tokenRecord || tokenRecord.usedAt) {
+      throw new BadRequestException('Mã liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: tokenRecord.userId } });
+    if (!user || !user.isActive) {
+      throw new BadRequestException('Tài khoản người dùng không hợp lệ hoặc đã bị khóa.');
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(dto.newPassword, salt);
+
+    user.passwordHash = passwordHash;
+    await this.userRepository.save(user);
+
+    tokenRecord.usedAt = new Date();
+    await this.passwordResetTokenRepository.save(tokenRecord);
+
+    // Thu hồi các phiên đăng nhập cũ để đảm bảo an toàn sau khi đổi mật khẩu
+    await this.refreshTokenRepository.update(
+      { userId: user.id, revokedAt: undefined },
+      { revokedAt: new Date() },
+    );
+
+    return {
+      success: true,
+      message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập với mật khẩu mới.',
+    };
   }
 }

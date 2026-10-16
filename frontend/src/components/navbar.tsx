@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/lib/auth-store';
 import { apiFetch } from '@/lib/api';
-import { Headphones, LogOut, Flame, Sparkles } from 'lucide-react';
+import { Headphones, LogOut, Flame, Sparkles, ShieldCheck } from 'lucide-react';
 
 export default function Navbar() {
   const router = useRouter();
@@ -18,7 +18,7 @@ export default function Navbar() {
     if (useAuthStore.getState().isAuthenticated) {
       apiFetch<any>('/auth/me')
         .then((profile) => updateUser(profile))
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [updateUser]);
 
@@ -47,7 +47,7 @@ export default function Navbar() {
         </Link>
 
         {/* Navigation Links */}
-        <nav className="flex items-center gap-6">
+        <nav className="flex items-center gap-4">
           <Link
             href="/practice/dictation"
             className="text-sm font-semibold text-slate-700 hover:text-indigo-600 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-100/70"
@@ -55,6 +55,16 @@ export default function Navbar() {
             <Headphones className="w-4 h-4 text-indigo-500" />
             <span>Luyện nghe (Dictation)</span>
           </Link>
+
+          {mounted && isAuthenticated && user?.role === 'ADMIN' && (
+            <Link
+              href="/admin"
+              className="text-sm font-semibold text-purple-700 hover:text-purple-900 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100/80 border border-purple-200/60"
+            >
+              <ShieldCheck className="w-4 h-4 text-purple-600" />
+              <span>Quản trị (Admin)</span>
+            </Link>
+          )}
         </nav>
 
         {/* User Area */}
@@ -76,9 +86,14 @@ export default function Navbar() {
                   <span>Premium</span>
                 </div>
               ) : user.role === 'ADMIN' ? (
-                <div className="px-2.5 py-1 bg-purple-50 border border-purple-200 rounded-full text-purple-700 font-medium text-xs">
-                  Admin
-                </div>
+                <Link
+                  href="/admin"
+                  className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 border border-purple-300 rounded-full text-purple-800 font-semibold text-xs transition-colors flex items-center gap-1"
+                  title="Đi đến Dashboard Quản trị"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
+                  <span>Admin</span>
+                </Link>
               ) : (
                 <div className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-medium">
                   Học viên Free
