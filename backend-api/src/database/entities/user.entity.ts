@@ -44,6 +44,9 @@ export class User {
   })
   role!: UserRole;
 
+  @Column({ type: 'boolean', default: true, name: 'is_active' })
+  isActive!: boolean;
+
   @Column({ type: 'integer', default: 0, name: 'streak_count' })
   streakCount!: number;
 
