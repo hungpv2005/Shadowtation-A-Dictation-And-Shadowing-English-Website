@@ -1,4 +1,6 @@
 import * as bcrypt from 'bcryptjs';
+import * as fs from 'fs';
+import * as path from 'path';
 import dataSource from './data-source';
 import {
   Lesson,
@@ -81,6 +83,7 @@ const LESSONS = [
 
 // Ngưỡng và giới hạn vận hành, chỉnh được qua Admin Panel (NFR-SL-04)
 const CONFIGS: { key: string; value: unknown; description: string }[] = [
+  { key: 'dictation.hint_penalties', value: [0, 5, 10, 20], description: 'Mức trừ điểm theo số gợi ý Dictation đã dùng' },
   { key: 'pronunciation.green_min', value: 80, description: 'Điểm từ tối thiểu để hiện màu Xanh' },
   { key: 'pronunciation.yellow_min', value: 60, description: 'Điểm từ tối thiểu để hiện màu Vàng (dưới mức này là Đỏ)' },
   { key: 'review.add_threshold', value: 60, description: 'Từ có điểm dưới ngưỡng này tự động vào Review List' },
@@ -122,20 +125,38 @@ async function seed() {
   }
 
   for (const l of LESSONS) {
-    if (await lessons.findOneBy({ title: l.title })) continue;
+    const existing = await lessons.findOneBy({ title: l.title });
+    if (existing) {
+      if (existing.createdByUserId === null) {
+        await lessons.save({
+          ...existing,
+          status: 'PUBLISHED',
+          mediaType: 'AUDIO',
+          sourceName: 'Shadowtation sample',
+          sourceUrl: l.audioUrl,
+        });
+      }
+      continue;
+    }
     const lesson = await lessons.save(
       lessons.create({
         title: l.title,
         level: l.level,
         audioUrl: l.audioUrl,
+        mediaType: 'AUDIO',
+        sourceName: 'Shadowtation sample',
+        sourceUrl: l.audioUrl,
+        durationSeconds: Math.ceil(l.sentences[l.sentences.length - 1]?.end ?? 0),
+        createdByUserId: null,
         isPremiumOnly: l.isPremiumOnly,
         status: 'PUBLISHED',
       }),
     );
-    for (const s of l.sentences) {
+    for (const [index, s] of l.sentences.entries()) {
       await sentences.save(
         sentences.create({
           lessonId: lesson.id,
+          orderIndex: index + 1,
           startTime: s.start,
           endTime: s.end,
           textContent: s.text,
@@ -144,6 +165,44 @@ async function seed() {
       );
     }
     console.log(`+ lesson ${l.title} (${l.sentences.length} câu)`);
+  }
+
+  const batchPath = path.join(__dirname, 'seed_lessons.json');
+  if (fs.existsSync(batchPath)) {
+    const batchLessons = JSON.parse(fs.readFileSync(batchPath, 'utf8')) as Array<{
+      title: string; mediaUrl: string; mediaType: 'AUDIO' | 'VIDEO' | 'PODCAST';
+      level?: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'; duration?: number;
+      sentences: Array<{ orderIndex: number; startTime: number; endTime: number; text: string }>;
+    }>;
+    for (const item of batchLessons) {
+      if (!item.title || !item.mediaUrl || !Array.isArray(item.sentences) || !item.sentences.length) continue;
+      const existingBatchLesson = await lessons.findOneBy({ sourceUrl: item.mediaUrl });
+      if (existingBatchLesson || await lessons.findOneBy({ title: item.title })) continue;
+      const lesson = await lessons.save(lessons.create({
+        title: item.title.slice(0, 255),
+        level: item.level ?? 'BEGINNER',
+        audioUrl: item.mediaUrl,
+        mediaType: item.mediaType,
+        sourceName: new URL(item.mediaUrl).hostname.slice(0, 150),
+        sourceUrl: item.mediaUrl,
+        durationSeconds: Number.isFinite(item.duration) ? Math.ceil(item.duration!) : null,
+        createdByUserId: null,
+        isPremiumOnly: false,
+        status: 'PUBLISHED',
+      }));
+      await sentences.save(item.sentences.map((sentence, index) => {
+        const orderIndex = Number.isInteger(sentence.orderIndex) && sentence.orderIndex > 0 ? sentence.orderIndex : index + 1;
+        return sentences.create({
+          lessonId: lesson.id,
+          orderIndex,
+          startTime: sentence.startTime,
+          endTime: sentence.endTime,
+          textContent: sentence.text,
+          wordsJson: buildWords(sentence.text, sentence.startTime, sentence.endTime),
+        });
+      }));
+      console.log(`+ preset lesson ${lesson.title} (${item.sentences.length} câu)`);
+    }
   }
 
   for (const c of CONFIGS) {

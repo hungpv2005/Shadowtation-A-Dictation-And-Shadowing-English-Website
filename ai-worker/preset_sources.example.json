@@ -1,0 +1,9 @@
+[
+  {
+    "title": "Replace with an authorized lesson title",
+    "mediaUrl": "https://www.youtube.com/watch?v=REPLACE_VIDEO_ID",
+    "mediaType": "VIDEO",
+    "level": "BEGINNER",
+    "captionsFile": "captions/replace-with-authorized-captions.vtt"
+  }
+]
