@@ -16,8 +16,9 @@ Mỗi điều chỉnh cần được cập nhật lại vào SRS ở Giai đoạ
 | 9 | Thêm bảng `refresh_tokens` | UC-01: cần lưu (bản băm của) refresh token để thu hồi |
 | 10 | `lesson_sentences.words_json` dùng dạng `[{word, start, end}]` | Mục 3.3.3.1 cần mốc thời gian từng từ cho karaoke; mục 3.3.2.5 lại mô tả từ loại và nghĩa. Hai mô tả mâu thuẫn, chọn dạng mốc thời gian |
 | 11 | Chỉ mục (index) cho các truy vấn thường dùng | Hiệu năng (NFR-PF-05) |
+| 12 | Thêm bảng `password_reset_tokens` | UC-01 (A2): lưu (bản băm của) token đặt lại mật khẩu có thời hạn để khôi phục |
 
-Chưa làm (bổ sung bằng migration mới khi tới giai đoạn cần): `audit_logs` (UC-09), `password_reset_tokens` (quên mật khẩu).
+Chưa làm (bổ sung bằng migration mới khi tới giai đoạn cần): `audit_logs` (UC-09).
 
 `schema.sql` có thêm các ràng buộc CHECK (role, status, type...) mà TypeORM không tự theo dõi.
 Kiểm tra giá trị hợp lệ ở tầng ứng dụng (DTO + class-validator) vẫn là bắt buộc.
