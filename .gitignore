@@ -24,6 +24,7 @@ tmp/
 *.mp3
 *.mp4
 *.m4a
+!frontend/public/audio/*.mp3
 
 # ===== Docker volumes cục bộ =====
 pgdata/
