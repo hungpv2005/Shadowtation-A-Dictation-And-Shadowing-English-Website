@@ -20,9 +20,10 @@ function formatTime(value: number) { const seconds = Math.max(0, Math.floor(valu
 function hasLoginToken() {
   if (typeof window === 'undefined') return false;
   return Boolean(
+    useAuthStore.getState().isAuthenticated ||
     useAuthStore.getState().accessToken ||
-    localStorage.getItem('access_token') ||
-    localStorage.getItem('accessToken')
+    sessionStorage.getItem('access_token') ||
+    (localStorage.getItem('shadowtation_remember_me') === 'true' && localStorage.getItem('access_token'))
   );
 }
 

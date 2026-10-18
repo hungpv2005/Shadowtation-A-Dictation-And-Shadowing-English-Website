@@ -5,8 +5,12 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -30,7 +34,11 @@ import { Throttle, seconds } from '@nestjs/throttler';
 @ApiTags('Authentication (UC-01)')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
+
 
   @Public()
   @Post('register')
@@ -100,5 +108,57 @@ export class AuthController {
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
   }
+
+  @Public()
+  @Get('google')
+  @ApiOperation({ summary: 'Chuyển hướng người dùng đến trang xác thực Google OAuth2' })
+  googleAuth(@Res() res: Response) {
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000')).split(',')[0].trim();
+    try {
+      const url = this.authService.getGoogleAuthUrl();
+      return res.redirect(url);
+    } catch (err: any) {
+      return res.redirect(
+        `${frontendUrl}/login?error=${encodeURIComponent(
+          err.message || 'Chưa cấu hình GOOGLE_CLIENT_ID trong file .env',
+        )}`,
+      );
+    }
+  }
+
+  @Public()
+  @Get('google/callback')
+  @ApiOperation({ summary: 'Google chuyển hướng trả về auth code để nhận JWT' })
+  async googleAuthCallback(
+    @Query('code') code: string,
+    @Query('error') googleError: string,
+    @Res() res: Response,
+  ) {
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000')).split(',')[0].trim();
+
+    if (googleError || !code) {
+      return res.redirect(
+        `${frontendUrl}/login?error=${encodeURIComponent(
+          googleError || 'Bạn đã hủy đăng nhập bằng Google',
+        )}`,
+      );
+    }
+
+    try {
+      const authResult = await this.authService.handleGoogleCallback(code);
+      return res.redirect(
+        `${frontendUrl}/auth/callback?accessToken=${encodeURIComponent(
+          authResult.accessToken,
+        )}&refreshToken=${encodeURIComponent(authResult.refreshToken)}`,
+      );
+    } catch (err: any) {
+      return res.redirect(
+        `${frontendUrl}/login?error=${encodeURIComponent(
+          err.message || 'Lỗi khi xác thực tài khoản Google',
+        )}`,
+      );
+    }
+  }
 }
+
 

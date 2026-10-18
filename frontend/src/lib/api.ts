@@ -37,7 +37,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const token =
     accessToken ??
     (typeof window !== 'undefined'
-      ? localStorage.getItem('access_token') ?? localStorage.getItem('accessToken')
+      ? localStorage.getItem('shadowtation_remember_me') === 'true'
+        ? localStorage.getItem('access_token') ?? localStorage.getItem('accessToken')
+        : sessionStorage.getItem('access_token') ?? sessionStorage.getItem('accessToken')
       : null);
 
   if (token && !headers['Authorization']) {

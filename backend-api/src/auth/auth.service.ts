@@ -262,4 +262,109 @@ export class AuthService {
       message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập với mật khẩu mới.',
     };
   }
+
+  getGoogleAuthUrl(): string {
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+    if (!clientId) {
+      throw new BadRequestException('Chưa cấu hình GOOGLE_CLIENT_ID trong biến môi trường (.env).');
+    }
+    const backendUrl = this.configService.get<string>('BACKEND_URL', 'http://localhost:4000');
+    const callbackUrl =
+      this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
+      `${backendUrl}/api/v1/auth/google/callback`;
+
+    const rootUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
+    const options = {
+      redirect_uri: callbackUrl,
+      client_id: clientId,
+      access_type: 'offline',
+      response_type: 'code',
+      prompt: 'select_account',
+      scope: [
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'https://www.googleapis.com/auth/userinfo.email',
+      ].join(' '),
+    };
+
+    const qs = new URLSearchParams(options);
+    return `${rootUrl}?${qs.toString()}`;
+  }
+
+  async handleGoogleCallback(code: string): Promise<AuthResponseDto> {
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+    const clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET');
+    if (!clientId || !clientSecret) {
+      throw new BadRequestException('Thiếu cấu hình GOOGLE_CLIENT_ID hoặc GOOGLE_CLIENT_SECRET trong .env.');
+    }
+
+    const backendUrl = this.configService.get<string>('BACKEND_URL', 'http://localhost:4000');
+    const callbackUrl =
+      this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
+      `${backendUrl}/api/v1/auth/google/callback`;
+
+    // 1. Gửi request đổi auth code lấy access_token từ Google
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: callbackUrl,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!tokenRes.ok) {
+      const errBody = await tokenRes.text();
+      throw new BadRequestException(`Xác thực Google thất bại: ${errBody}`);
+    }
+
+    const tokenData = (await tokenRes.json()) as { access_token: string };
+    const accessToken = tokenData.access_token;
+
+    // 2. Lấy thông tin user profile từ Google
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!userRes.ok) {
+      throw new BadRequestException('Không thể lấy thông tin tài khoản từ Google.');
+    }
+
+    const googleUser = (await userRes.json()) as {
+      email: string;
+      name?: string;
+      picture?: string;
+      sub: string;
+    };
+
+    const email = googleUser.email.trim().toLowerCase();
+
+    // 3. Tìm hoặc tự động tạo User học viên mới
+    let user = await this.userRepository.findOne({ where: { email } });
+    if (!user) {
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(crypto.randomUUID(), salt);
+      user = this.userRepository.create({
+        email,
+        fullName: googleUser.name || email.split('@')[0],
+        avatarUrl: googleUser.picture || null,
+        passwordHash,
+        role: UserRole.STUDENT,
+        isActive: true,
+      });
+      await this.userRepository.save(user);
+    } else {
+      if (!user.isActive) {
+        throw new BadRequestException('Tài khoản đã bị tạm khóa. Vui lòng liên hệ quản trị viên.');
+      }
+      if (!user.avatarUrl && googleUser.picture) {
+        user.avatarUrl = googleUser.picture;
+        await this.userRepository.save(user);
+      }
+    }
+
+    return this.generateTokens(user);
+  }
 }
