@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 
-type LoginResult = { accessToken: string; user: { fullName: string; email: string } };
+type LoginResult = { accessToken: string; refreshToken: string; user: { fullName: string; email: string } };
 
 export function LoginForm() {
   const router = useRouter();
@@ -25,6 +25,7 @@ export function LoginForm() {
         body: JSON.stringify({ email, password }),
       });
       localStorage.setItem('access_token', result.accessToken);
+      localStorage.setItem('refresh_token', result.refreshToken);
       localStorage.setItem('student_profile', JSON.stringify(result.user));
       window.dispatchEvent(new Event('shadowtation:auth-change'));
       router.replace('/');

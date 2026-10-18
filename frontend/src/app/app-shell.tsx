@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { apiFetch } from '@/lib/api';
 
 const links = [
   { href: '/', label: 'Trang chủ' },
@@ -31,7 +32,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener('shadowtation:auth-change', syncAuth);
     return () => window.removeEventListener('shadowtation:auth-change', syncAuth);
   }, [pathname]);
-  function signOut() { localStorage.removeItem('access_token'); localStorage.removeItem('accessToken'); localStorage.removeItem('refresh_token'); localStorage.removeItem('student_profile'); setSignedIn(false); setProfileOpen(false); window.dispatchEvent(new Event('shadowtation:auth-change')); router.push('/features/uc-01'); }
+  function signOut() {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) void apiFetch('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }).catch(() => undefined);
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('student_profile');
+    setSignedIn(false);
+    setProfileOpen(false);
+    window.dispatchEvent(new Event('shadowtation:auth-change'));
+    router.push('/features/uc-01');
+  }
   return <>
     <header className="app-header">
       <div className="app-header-inner">

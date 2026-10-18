@@ -16,7 +16,7 @@ export function tokenize(value: string): string[] {
   return value
     .normalize('NFC')
     .toLocaleLowerCase('en-US')
-    .replace(/[.,!?;:()[\]{}“”"…]/g, ' ')
+    .replace(/[.,!?;:()[\]{}“”"'‘’…—–\-\/]/g, ' ')
     .trim()
     .split(/\s+/)
     .filter(Boolean);
@@ -78,8 +78,14 @@ export function hintPenalty(level: number, penalties: number[] = [0, 5, 10, 20])
 }
 
 export function maskedHint(reference: string, level: number): string {
-  const words = reference.split(/\s+/);
-  if (level === 1) return words.map((word) => word.replace(/[A-Za-z]/, (letter) => `${letter}…`)).join(' ');
-  if (level === 2) return words.map((word, index) => index < 2 ? word : word.replace(/[A-Za-z]/, (letter) => `${letter}…`)).join(' ');
-  return words.map((word, index) => index < 3 ? word : '＿'.repeat(Math.min(word.length, 12))).join(' ');
+  if (level <= 0) return '';
+  let wordIndex = 0;
+  return reference.replace(/[A-Za-z0-9]+|[^A-Za-z0-9]+/g, (part) => {
+    if (!/[A-Za-z0-9]/.test(part)) return part;
+    const letters = Array.from(part);
+    const currentIndex = wordIndex++;
+    if (level >= 3 && currentIndex === 0) return part;
+    if (level >= 2) return `${letters[0]}${'＿'.repeat(Math.max(1, letters.length - 1))}`;
+    return '＿'.repeat(Math.min(letters.length, 16));
+  });
 }

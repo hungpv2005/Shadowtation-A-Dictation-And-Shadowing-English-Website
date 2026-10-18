@@ -1,15 +1,18 @@
-# Dictation content import
+# Dictation content ingestion (Node.js)
 
-Dictation lessons need both playable media and timestamped English captions. The worker groups WebVTT cues into sentence rows; NestJS stores the lesson and its sentences together. YouTube playback uses the embedded player. The worker does not download a video, extract its audio, or scrape captions.
+Dictation content processing runs in the NestJS backend. YouTube video captions are fetched in English with the `youtube-transcript` package. Audio and podcast sources use WebVTT captions supplied by the user or maintained with the preset lesson manifest. The backend stores each lesson and its timestamped sentences in one database transaction; it does not download media files.
 
 ## Import a lesson from the website
 
-1. Start PostgreSQL and apply the database migrations from `backend-api` with `npm run migration:run`.
-2. Set the same non-empty `INTERNAL_API_KEY` in the backend and `ai-worker` environments. Set `AI_WORKER_URL` for the backend (for a local worker, `http://localhost:8000`).
-3. Start the worker from `ai-worker` with `uvicorn main:app --host 0.0.0.0 --port 8000` and start the NestJS API.
-4. Sign in, open **Luyện nghe dictation**, choose a media type, paste its HTTPS URL, and paste WebVTT captions with cue timestamps. Submit to create a private lesson and open it immediately.
+1. Start PostgreSQL and apply the migrations from `backend-api` with `npm run migration:run`.
+2. Start the NestJS API with `npm run start:dev`.
+3. Sign in, open **Luyện nghe dictation**, choose a media type, and paste its HTTPS URL.
+4. For YouTube, enable **Tự lấy phụ đề tiếng Anh từ YouTube**. For audio or podcast, upload or paste WebVTT captions with cue timestamps.
+5. Submit to create a private lesson and open it immediately.
 
-Example caption input:
+YouTube caption retrieval accepts English regional tracks such as `en-GB` as well as `en`. If a video has no usable English captions or YouTube blocks a request, turn off automatic captions and provide a WebVTT file instead.
+
+Example WebVTT:
 
 ```vtt
 WEBVTT
@@ -21,20 +24,23 @@ Welcome to our English lesson.
 Today we are going to talk about daily habits.
 ```
 
-The endpoint requires a signed-in account. It validates the request, asks the worker to parse the supplied VTT, then persists the lesson and all sentence timestamps in one database transaction. A user's imported lessons are visible only to that account; they are not automatically published to other students.
+The endpoint requires an authenticated account. It validates the source and transcript, then persists the lesson and sentence timestamps atomically. Imported lessons remain private to the importing account.
 
 ## Prepare preset lessons in a batch
 
-1. Copy `ai-worker/preset_sources.example.json` to a new manifest and replace the sample fields. `captionsFile` paths are relative to the manifest and should point to WebVTT files you own or are authorized to use.
-2. Start the worker and set `INTERNAL_API_KEY` for the command line environment.
-3. Run `python ai-worker/generate_batch.py ai-worker/preset_sources.json`. The generated file is `backend-api/src/database/seed_lessons.json`.
-4. From `backend-api`, run `npm run seed`. Batch seed rows are public presets and are skipped when the same source URL or title already exists.
+The project includes `backend-api/src/database/preset_sources.json` with four BBC Learning English videos and two direct MP3 lessons (Audio and Podcast). Each is about six minutes and the curated manifest requires at least 20 transcript sentences before it can be imported. The audio and podcast entries point to the matching YouTube episode only as their caption source; playback still uses the MP3.
 
-The generator accepts multiple entries, so maintain the catalog by adding captioned, reviewed sources to the manifest. A video URL by itself cannot provide transcript or trustworthy word timestamps. If no caption file is available, obtain permission and prepare captions first. LibriVox publishes a catalog API at <https://librivox.org/api/info>; check the recording's reuse terms for the audience's jurisdiction before importing it.
+1. Review the curated manifest and confirm the source URLs and captions are still available.
+2. From `backend-api`, run `npm run seed:presets`. This fetches the timestamped English captions, writes an ignored local `src/database/seed_lessons.json`, and adds the public lessons to the configured development database.
+3. To add another item, use `useYouTubeCaptions: true` for a YouTube video; or provide `captionsFile` for a VTT you are allowed to use. For an MP3 paired with a matching YouTube upload of the same episode, set `captionsYouTubeUrl` to that upload. Set minimum sentence and duration checks for longer sources.
 
-## URL and playback notes
+Generated transcript JSON is kept out of Git. The manifest contains only media URLs and source metadata, so the transcript is fetched again when `seed:presets` is run.
 
-- `VIDEO` accepts YouTube URLs and plays through YouTube's embedded player at each sentence's timestamp.
-- `AUDIO` and `PODCAST` accept direct HTTP(S) media URLs supported by the browser. The source must allow playback from the website.
-- The WebVTT timestamps are used for sentence playback. Word-level timing is interpolated within each sentence for the existing scorer/review UI; it is not a forced-alignment result.
-- Configure a reachable media URL and the matching VTT timestamps. The worker intentionally does not fetch arbitrary URLs, which also avoids server-side requests to private network addresses.
+The manifest accepts up to 100 lessons per run. A WebVTT file must be no larger than 1 MB. Each resulting lesson is limited to 1,000 sentences. Batch seed skips a lesson when a public lesson already uses the same source URL or title.
+
+## Source and playback notes
+
+- `VIDEO` sources must be YouTube links and play through YouTube's embedded player.
+- `AUDIO` and `PODCAST` use direct HTTP(S) media URLs playable by the browser; their library cards and player labels distinguish the two formats.
+- WebVTT cues are grouped into sentences at punctuation, long pauses, and a text-size boundary. Word-level timings are interpolated within each sentence; they are not forced-alignment results.
+- The backend only fetches captions from YouTube. It does not fetch user supplied audio URLs, which avoids server requests to private network addresses.

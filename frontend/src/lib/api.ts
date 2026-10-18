@@ -9,19 +9,80 @@ export class ApiError extends Error {
   }
 }
 
+let refreshInFlight: Promise<string | null> | null = null;
+
+function clearStoredSession() {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('student_profile');
+  window.dispatchEvent(new Event('shadowtation:auth-change'));
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
+  const refreshToken = localStorage.getItem('refresh_token');
+  if (!refreshToken) return null;
+
+  refreshInFlight = (async () => {
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+        cache: 'no-store',
+      });
+    } catch {
+      // A temporary network failure should not erase a still-valid saved session.
+      return null;
+    }
+    if (response.status === 401 || response.status === 403) {
+      clearStoredSession();
+      return null;
+    }
+    if (!response.ok) return null;
+    try {
+      const result = await response.json() as { accessToken?: string; refreshToken?: string };
+      if (!result.accessToken || !result.refreshToken) return null;
+      localStorage.setItem('access_token', result.accessToken);
+      localStorage.setItem('refresh_token', result.refreshToken);
+      window.dispatchEvent(new Event('shadowtation:auth-change'));
+      return result.accessToken;
+    } catch {
+      return null;
+    }
+  })();
+
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
 /** Gọi Core API và gửi JWT nếu người dùng đã đăng nhập ở trình duyệt. */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  if (typeof window !== 'undefined' && !headers.has('Authorization')) {
-    const token = localStorage.getItem('access_token') ?? localStorage.getItem('accessToken');
-    if (token) headers.set('Authorization', `Bearer ${token}`);
+  const send = (tokenOverride?: string) => {
+    const headers = new Headers(init.headers);
+    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    if (typeof window !== 'undefined') {
+      const token = tokenOverride ?? localStorage.getItem('access_token') ?? localStorage.getItem('accessToken');
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+    }
+    return fetch(`${API_URL}${path}`, { ...init, headers, cache: 'no-store' });
+  };
+
+  let res = await send();
+  if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/')) {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      const freshToken = await refreshAccessToken();
+      if (freshToken) res = await send(freshToken);
+    } else if (localStorage.getItem('access_token') || localStorage.getItem('accessToken')) {
+      clearStoredSession();
+    }
   }
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers,
-    cache: 'no-store',
-  });
   if (!res.ok) {
     let message = res.statusText;
     try {

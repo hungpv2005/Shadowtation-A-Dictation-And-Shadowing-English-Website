@@ -2,25 +2,79 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { compareDictation, hintPenalty, maskedHint, type DictationScore } from '@/lib/dictation';
+import { MediaDictationPlayer } from './media-dictation-player';
 
-type Lesson = { id: string; title: string; level: string; audioUrl: string; mediaType?: 'AUDIO' | 'VIDEO' | 'PODCAST'; sourceName?: string | null; sourceUrl?: string | null; durationSeconds?: number | null; isPremiumOnly: boolean; access: 'AVAILABLE' | 'LOCKED'; sentenceCount: number };
+type Lesson = { id: string; title: string; level: string; audioUrl?: string | null; mediaType?: 'AUDIO' | 'VIDEO' | 'PODCAST'; sourceName?: string | null; sourceUrl?: string | null; durationSeconds?: number | null; isPremiumOnly: boolean; access: 'AVAILABLE' | 'LOCKED'; sentenceCount: number };
 type Sentence = { id: string; startTime: number; endTime: number; textContent: string; wordsJson: { word: string; start: number; end: number }[] };
 type Submission = { sentenceId: string; textInput: string; hintCount: number; usedTranscriptHint: boolean };
+type LessonDraft = {
+  lessonId: string; answers: Record<string, string>; current: number;
+  hintCounts: Record<string, number>; transcriptUsed: Record<string, boolean>;
+  scores: Record<string, DictationScore>; mode: 'FULL' | 'BLANKS'; savedAt: string;
+  isCompleted?: boolean; totalScore?: number | null;
+};
+type RecentLesson = { lessonId: string; lastOpenedAt: string; status: 'IN_PROGRESS' | 'COMPLETED' };
 
 const DRAFT_KEY = 'shadowtation.dictation.draft';
+const PENDING_KEY = 'shadowtation.dictation.pending';
 const FAVORITES_KEY = 'shadowtation.dictation.favorites';
+const RECENT_KEY = 'shadowtation.dictation.recent';
+const lessonDraftKey = (lessonId: string) => `${DRAFT_KEY}:${lessonId}`;
+function readLessonDraft(lessonId: string): LessonDraft | null {
+  try {
+    const raw = localStorage.getItem(lessonDraftKey(lessonId));
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as Partial<LessonDraft>;
+    if (draft.lessonId !== lessonId || !draft.answers || !Number.isFinite(draft.current)) return null;
+    return {
+      lessonId,
+      answers: draft.answers,
+      current: draft.current!,
+      hintCounts: draft.hintCounts ?? {},
+      transcriptUsed: draft.transcriptUsed ?? {},
+      scores: draft.scores ?? {},
+      mode: draft.mode === 'BLANKS' ? 'BLANKS' : 'FULL',
+      savedAt: draft.savedAt ?? new Date(0).toISOString(),
+      isCompleted: draft.isCompleted === true,
+      totalScore: Number.isFinite(draft.totalScore) ? draft.totalScore! : null,
+    };
+  } catch { return null; }
+}
+function readLessonDrafts(): LessonDraft[] {
+  const drafts: LessonDraft[] = [];
+  const prefix = `${DRAFT_KEY}:`;
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(prefix)) continue;
+      const draft = readLessonDraft(key.slice(prefix.length));
+      if (draft) drafts.push(draft);
+    }
+  } catch { return drafts; }
+  return drafts.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
+function readRecentLessons(): RecentLesson[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as RecentLesson[];
+    return Array.isArray(value) ? value.filter((item) => item?.lessonId && item?.lastOpenedAt) : [];
+  } catch { return []; }
+}
 function youtubeId(value: string) { try { const url = new URL(value); if (url.protocol !== 'https:' && url.protocol !== 'http:') return ''; if (url.hostname === 'youtu.be') return url.pathname.slice(1).split('/')[0]; if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(url.hostname)) return url.searchParams.get('v') || url.pathname.match(/\/(?:embed|shorts)\/([^/?]+)/)?.[1] || ''; } catch {} return ''; }
-function youtubeEmbedUrl(value: string, start: number, end: number) { const id = youtubeId(value); return id ? `https://www.youtube-nocookie.com/embed/${id}?start=${Math.floor(start)}&end=${Math.ceil(end)}&rel=0` : ''; }
-function formatTime(value: number) { const seconds = Math.max(0, Math.floor(value)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; }
+function formatDuration(seconds?: number | null) { if (!seconds || seconds < 1) return 'Chưa rõ thời lượng'; const total = Math.floor(seconds); return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`; }
+function mediaTypeLabel(type?: Lesson['mediaType']) { if (type === 'VIDEO') return '▶ Video YouTube'; if (type === 'PODCAST') return '◉ Podcast'; return '♫ Audio'; }
 function hasLoginToken() { return typeof window !== 'undefined' && Boolean(localStorage.getItem('access_token') ?? localStorage.getItem('accessToken')); }
 
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedLessonId = searchParams.get('lesson');
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [savedDrafts, setSavedDrafts] = useState<LessonDraft[]>([]);
+  const [recentLessons, setRecentLessons] = useState<RecentLesson[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('ALL');
@@ -46,28 +100,32 @@ export default function Home() {
   const [transcriptOn, setTranscriptOn] = useState(false);
   const [transcriptUsed, setTranscriptUsed] = useState<Record<string, boolean>>({});
   const [scores, setScores] = useState<Record<string, DictationScore>>({});
+  const [hasCompleted, setHasCompleted] = useState(false);
+  const [completionScore, setCompletionScore] = useState<number | null>(null);
+  const [completionSyncPending, setCompletionSyncPending] = useState(false);
   const [debouncedAnswer, setDebouncedAnswer] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
   const [finished, setFinished] = useState(false);
+  const [resumeSelection, setResumeSelection] = useState<{ lesson: Lesson; fromLibrary: boolean; draft: LessonDraft } | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
   const [fillReset, setFillReset] = useState(0);
-  const [audioTime, setAudioTime] = useState(0);
-  const [audioDuration, setAudioDuration] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const skipUrlLessonRef = useRef(false);
+  const openedFromLibraryRef = useRef(false);
+  const isLeavingLessonRef = useRef(false);
+  const activeLessonIdRef = useRef<string | null>(null);
+  const latestDraftRef = useRef<LessonDraft | null>(null);
+  const beginLessonRef = useRef<(item: Lesson, fromLibrary?: boolean) => void>(() => {});
 
-  function clearExpiredToken() {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refresh_token');
-    window.dispatchEvent(new Event('shadowtation:auth-change'));
-  }
+  useEffect(() => {
+    return () => { activeLessonIdRef.current = null; };
+  }, []);
 
   useEffect(() => {
     try { setFavorites(JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? '[]')); } catch { localStorage.removeItem(FAVORITES_KEY); }
+    setSavedDrafts(readLessonDrafts());
+    setRecentLessons(readRecentLessons());
     apiFetch<{ items: Lesson[] }>('/practice/dictation/lessons')
       .then((data) => setLessons(data.items))
       .catch((e: Error) => setError(e.message || 'Không tải được danh sách bài học.'))
@@ -75,41 +133,134 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!lessons.length || lesson) return;
-    if (skipUrlLessonRef.current) { skipUrlLessonRef.current = false; return; }
-    const selectedId = new URLSearchParams(window.location.search).get('lesson');
-    const selected = lessons.find((item) => item.id === selectedId);
+    if (!lessons.length || lesson || !selectedLessonId || isLeavingLessonRef.current || resumeSelection?.lesson.id === selectedLessonId) return;
+    const selected = lessons.find((item) => item.id === selectedLessonId);
     if (!selected) return;
     if (selected.access === 'LOCKED') setLockedLesson(selected);
-    else setLesson(selected);
-  }, [lessons, lesson]);
+    else beginLessonRef.current(selected, false);
+  }, [lessons, lesson, selectedLessonId, resumeSelection]);
 
-  function beginLesson(item: Lesson) {
+  function beginLesson(item: Lesson, fromLibrary = true) {
     if (!hasLoginToken()) { setLoginPrompt(true); return; }
     if (item.access === 'LOCKED') { setLockedLesson(item); return; }
-    router.push(`/practice/dictation?lesson=${encodeURIComponent(item.id)}`);
+    const savedDraft = readLessonDraft(item.id);
+    if (savedDraft) {
+      setResumeSelection({ lesson: item, fromLibrary, draft: savedDraft });
+      return;
+    }
+    startLesson(item, fromLibrary);
+  }
+
+  function resumeSavedLesson() {
+    if (!resumeSelection) return;
+    const { lesson: selected, fromLibrary } = resumeSelection;
+    setResumeSelection(null);
+    startLesson(selected, fromLibrary);
+  }
+
+  function restartSavedLesson() {
+    if (!resumeSelection) return;
+    const { lesson: selected, fromLibrary } = resumeSelection;
+    localStorage.removeItem(lessonDraftKey(selected.id));
+    const pendingRaw = localStorage.getItem(PENDING_KEY);
+    if (pendingRaw) {
+      try {
+        const pending = JSON.parse(pendingRaw) as { lessonId?: string };
+        if (pending.lessonId === selected.id) localStorage.removeItem(PENDING_KEY);
+      } catch { localStorage.removeItem(PENDING_KEY); }
+    }
+    const legacyRaw = localStorage.getItem(DRAFT_KEY);
+    if (legacyRaw) {
+      try {
+        const legacy = JSON.parse(legacyRaw) as { lessonId?: string };
+        if (legacy.lessonId === selected.id) localStorage.removeItem(DRAFT_KEY);
+      } catch { localStorage.removeItem(DRAFT_KEY); }
+    }
+    setSavedDrafts(readLessonDrafts());
+    setResumeSelection(null);
+    startLesson(selected, fromLibrary);
+  }
+
+  function startLesson(item: Lesson, fromLibrary: boolean) {
+    openedFromLibraryRef.current = fromLibrary;
+    isLeavingLessonRef.current = false;
+    activeLessonIdRef.current = item.id;
+    if (fromLibrary) router.push(`/practice/dictation?lesson=${encodeURIComponent(item.id)}`);
+    setDraftReady(false);
+    setSentences([]);
+    setAnswers({});
+    setCurrent(0);
+    setHintLevel(0);
+    setHintCounts({});
+    setTranscriptOn(false);
+    setTranscriptUsed({});
+    setScores({});
+    setHasCompleted(false);
+    setCompletionScore(null);
+    setCompletionSyncPending(false);
+    setMode('FULL');
+    setFinished(false);
     setLesson(item);
     setError('');
+    setRecentLesson(item.id, 'IN_PROGRESS');
+  }
+
+  beginLessonRef.current = beginLesson;
+
+  function setRecentLesson(lessonId: string, status: RecentLesson['status']) {
+    const next: RecentLesson[] = [{ lessonId, lastOpenedAt: new Date().toISOString(), status }, ...readRecentLessons().filter((item) => item.lessonId !== lessonId)].slice(0, 12);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* Keep the active lesson usable if storage is full. */ }
+    setRecentLessons(next);
   }
 
   useEffect(() => {
-    if (!lesson) return;
+    if (!lesson) { setDraftReady(false); return; }
+    let cancelled = false;
+    setDraftReady(false);
     apiFetch<{ sentences: Sentence[]; hintPenalties?: number[] }>(`/lessons/${lesson.id}/sentences`)
       .then((data) => {
+        if (cancelled) return;
+        if (!data.sentences.length || data.sentences.some((item) => !item.textContent?.trim() || !Number.isFinite(item.startTime) || !Number.isFinite(item.endTime) || item.endTime <= item.startTime)) {
+          throw new Error('Bài học chưa có transcript hoặc mốc thời gian hợp lệ. Quay lại danh sách để chọn bài khác.');
+        }
         setSentences(data.sentences);
         if (data.hintPenalties?.length === 4) setHintPenalties(data.hintPenalties);
-        const draft = localStorage.getItem(DRAFT_KEY);
-        if (draft) {
+        const legacyRaw = localStorage.getItem(DRAFT_KEY);
+        if (legacyRaw) {
           try {
-            const saved = JSON.parse(draft) as { lessonId: string; answers: Record<string, string>; current: number };
-            if (saved.lessonId === lesson.id) { setAnswers(saved.answers); setCurrent(Math.min(saved.current, Math.max(0, data.sentences.length - 1))); }
+            const legacy = JSON.parse(legacyRaw) as { lessonId?: string; answers?: Record<string, string>; current?: number; pendingSubmission?: { lessonId?: string; answers?: Submission[] } };
+            if (legacy.pendingSubmission?.lessonId === lesson.id) localStorage.setItem(PENDING_KEY, JSON.stringify(legacy.pendingSubmission));
+            if (legacy.lessonId === lesson.id && !localStorage.getItem(lessonDraftKey(lesson.id))) {
+              localStorage.setItem(lessonDraftKey(lesson.id), JSON.stringify(legacy));
+            }
+            if (legacy.lessonId === lesson.id || legacy.pendingSubmission?.lessonId === lesson.id) localStorage.removeItem(DRAFT_KEY);
           } catch { localStorage.removeItem(DRAFT_KEY); }
         }
+        const saved = readLessonDraft(lesson.id);
+        if (saved) {
+          const savedCurrent = Math.min(saved.current, Math.max(0, data.sentences.length - 1));
+          setAnswers(saved.answers);
+          setCurrent(savedCurrent);
+          setHintCounts(saved.hintCounts);
+          setTranscriptUsed(saved.transcriptUsed);
+          setScores(saved.scores);
+          setMode(saved.mode);
+          setHasCompleted(saved.isCompleted === true);
+          setCompletionScore(saved.isCompleted === true && Number.isFinite(saved.totalScore)
+            ? saved.totalScore!
+            : saved.isCompleted === true
+              ? Math.round(Object.values(saved.scores).reduce((sum, score) => sum + score.accuracy, 0) / Math.max(Object.keys(saved.scores).length, 1))
+              : null);
+          setHintLevel(saved.hintCounts[data.sentences[savedCurrent]?.id] ?? 0);
+        }
+        setDraftReady(true);
       })
       .catch((e: Error) => {
+        if (cancelled) return;
         if (e instanceof ApiError && e.status === 401) {
-          clearExpiredToken();
-          skipUrlLessonRef.current = true;
+          isLeavingLessonRef.current = true;
+          openedFromLibraryRef.current = false;
+          activeLessonIdRef.current = null;
           setLesson(null);
           setLoginPrompt(true);
           router.replace('/practice/dictation');
@@ -117,19 +268,62 @@ export default function Home() {
         }
         setError(e.message || 'Không tải được nội dung bài.');
       });
-  }, [lesson]);
+    return () => { cancelled = true; };
+  }, [lesson, router]);
 
   useEffect(() => {
     if (!lesson) return;
     const syncDraft = async () => {
       try {
-        const raw = localStorage.getItem(DRAFT_KEY);
+        const legacyRaw = localStorage.getItem(DRAFT_KEY);
+        if (legacyRaw) {
+          try {
+            const legacy = JSON.parse(legacyRaw) as { pendingSubmission?: { lessonId?: string; answers?: Submission[] } };
+            if (legacy.pendingSubmission?.lessonId === lesson.id) {
+              localStorage.setItem(PENDING_KEY, JSON.stringify(legacy.pendingSubmission));
+              localStorage.removeItem(DRAFT_KEY);
+            }
+          } catch { localStorage.removeItem(DRAFT_KEY); }
+        }
+        const raw = localStorage.getItem(PENDING_KEY);
         if (!raw) return;
-        const draft = JSON.parse(raw) as { pendingSubmission?: { lessonId: string; answers: Submission[] } };
-        if (draft.pendingSubmission?.lessonId !== lesson.id) return;
-        await apiFetch('/practice/dictation/submit', { method: 'POST', body: JSON.stringify(draft.pendingSubmission) });
-        localStorage.removeItem(DRAFT_KEY);
-        setFinished(true);
+        const pending = JSON.parse(raw) as { lessonId: string; answers: Submission[] };
+        if (pending.lessonId !== lesson.id) return;
+        const result = await apiFetch<{ overallScore?: number; results?: Array<{ sentenceId: string; accuracyScore: number; wer: number; diff: Array<{ reference: string; submitted: string; operation: string }> }> }>('/practice/dictation/submit', { method: 'POST', body: JSON.stringify(pending) });
+        if (localStorage.getItem(PENDING_KEY) !== raw) return;
+        const totalScore = Number.isFinite(result.overallScore) ? result.overallScore! : 0;
+        const previous = readLessonDraft(lesson.id) ?? latestDraftRef.current;
+        const resultScores = Object.fromEntries((result.results ?? []).map((item) => [item.sentenceId, {
+          accuracy: item.accuracyScore,
+          wer: item.wer,
+          tokens: item.diff.map((token) => ({
+            reference: token.reference,
+            submitted: token.submitted,
+            kind: token.operation === 'MATCH' ? 'correct' : token.operation.toLowerCase() as DictationScore['tokens'][number]['kind'],
+          })),
+        }]));
+        const completedDraft: LessonDraft = previous ? {
+          ...previous, scores: Object.keys(resultScores).length ? resultScores : previous.scores,
+          isCompleted: true, totalScore, savedAt: new Date().toISOString(),
+        } : {
+          lessonId: lesson.id,
+          answers: Object.fromEntries(pending.answers.map((item) => [item.sentenceId, item.textInput])),
+          current: 0,
+          hintCounts: Object.fromEntries(pending.answers.map((item) => [item.sentenceId, item.hintCount])),
+          transcriptUsed: Object.fromEntries(pending.answers.map((item) => [item.sentenceId, item.usedTranscriptHint])),
+          scores: resultScores,
+          mode: 'FULL', savedAt: new Date().toISOString(), isCompleted: true, totalScore,
+        };
+        localStorage.removeItem(PENDING_KEY);
+        localStorage.setItem(lessonDraftKey(lesson.id), JSON.stringify(completedDraft));
+        setSavedDrafts(readLessonDrafts());
+        setRecentLesson(lesson.id, 'COMPLETED');
+        if (!isLeavingLessonRef.current && activeLessonIdRef.current === lesson.id) {
+          latestDraftRef.current = completedDraft;
+          setHasCompleted(true);
+          setCompletionScore(totalScore);
+          setCompletionSyncPending(false);
+        }
       } catch { /* Giữ nguyên bản nháp để đồng bộ lại ở sự kiện online tiếp theo. */ }
     };
     window.addEventListener('online', syncDraft);
@@ -138,6 +332,18 @@ export default function Home() {
   }, [lesson]);
 
   const visibleLessons = lessons.filter((item) => (!showFavorites || favorites.includes(item.id)) && (levelFilter === 'ALL' || item.level === levelFilter) && (mediaFilter === 'ALL' || (item.mediaType ?? 'AUDIO') === mediaFilter) && item.title.toLowerCase().includes(search.trim().toLowerCase()));
+  const recentLibraryItems = useMemo(() => {
+    const recentById = new Map<string, RecentLesson>();
+    recentLessons.forEach((item) => recentById.set(item.lessonId, item));
+    savedDrafts.forEach((draft) => recentById.set(draft.lessonId, { lessonId: draft.lessonId, lastOpenedAt: draft.savedAt, status: draft.isCompleted ? 'COMPLETED' : 'IN_PROGRESS' }));
+    return Array.from(recentById.values())
+      .sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt))
+      .flatMap((recent) => {
+        const item = lessons.find((candidate) => candidate.id === recent.lessonId);
+        if (!item) return [];
+        return [{ recent, lesson: item, draft: savedDrafts.find((candidate) => candidate.lessonId === item.id) ?? null }];
+      });
+  }, [lessons, recentLessons, savedDrafts]);
   const isYoutubeSource = customMediaType === 'VIDEO' && Boolean(youtubeId(youtubeUrl));
   function toggleFavorite(id: string) { setFavorites((old) => { const next = old.includes(id) ? old.filter((value) => value !== id) : [...old, id]; localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); return next; }); }
   async function createCustomLesson() {
@@ -158,7 +364,6 @@ export default function Home() {
       beginLesson(response.item);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        clearExpiredToken();
         setLoginPrompt(true);
         setYoutubeError('');
       } else {
@@ -170,46 +375,54 @@ export default function Home() {
   }
 
   const sentence = sentences[current];
-  const embedVideo = lesson?.mediaType === 'VIDEO' && sentence ? youtubeEmbedUrl(lesson.audioUrl, sentence.startTime, sentence.endTime) : '';
   const answer = sentence ? (answers[sentence.id] ?? '') : '';
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (audio) { audio.pause(); audio.currentTime = sentence?.startTime ?? 0; }
-    setAudioTime(sentence?.startTime ?? 0);
-    setIsPlaying(false);
-  }, [sentence?.id, sentence?.startTime]);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedAnswer(answer), 150);
     return () => window.clearTimeout(timer);
   }, [answer, sentence?.id]);
-  const liveScore = useMemo(() => sentence ? compareDictation(sentence.textContent, debouncedAnswer) : null, [sentence, debouncedAnswer]);
+  const liveScore = useMemo(() => sentence?.textContent?.trim() ? compareDictation(sentence.textContent, debouncedAnswer) : null, [sentence, debouncedAnswer]);
   const completedCount = Object.keys(scores).length;
   const average = completedCount ? Math.round(Object.values(scores).reduce((sum, score) => sum + score.accuracy, 0) / completedCount) : 0;
+  const activeDraft = useMemo<LessonDraft | null>(() => lesson && sentences.length && draftReady && !finished ? {
+    lessonId: lesson.id, answers, current, hintCounts, transcriptUsed, scores, mode, savedAt: new Date().toISOString(),
+    isCompleted: hasCompleted, totalScore: hasCompleted ? completionScore : null,
+  } : null, [lesson, sentences.length, draftReady, finished, answers, current, hintCounts, transcriptUsed, scores, mode, hasCompleted, completionScore]);
+  latestDraftRef.current = activeDraft;
+
+  useEffect(() => {
+    if (!activeDraft) return;
+    try {
+      localStorage.setItem(lessonDraftKey(activeDraft.lessonId), JSON.stringify(activeDraft));
+      setSavedDrafts(readLessonDrafts());
+    } catch { setError('Không thể tự lưu tiến trình trên thiết bị này. Hãy kiểm tra dung lượng lưu trữ trình duyệt.'); }
+  }, [activeDraft]);
+
+  useEffect(() => {
+    const persistOnPageExit = () => {
+      const draft = latestDraftRef.current;
+      if (!draft) return;
+      try { localStorage.setItem(lessonDraftKey(draft.lessonId), JSON.stringify(draft)); } catch { /* The regular autosave already reported storage errors. */ }
+    };
+    window.addEventListener('pagehide', persistOnPageExit);
+    window.addEventListener('beforeunload', persistOnPageExit);
+    return () => {
+      persistOnPageExit();
+      window.removeEventListener('pagehide', persistOnPageExit);
+      window.removeEventListener('beforeunload', persistOnPageExit);
+    };
+  }, []);
 
   function saveAnswer(value: string) {
-    if (!sentence || !lesson) return;
+    if (!sentence || !lesson || sending) return;
+    invalidateCompletedResult();
     const next = { ...answers, [sentence.id]: value };
     setAnswers(next);
+    setError('');
     setScores((old) => { if (!(sentence.id in old)) return old; const copy = { ...old }; delete copy[sentence.id]; return copy; });
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ lessonId: lesson.id, answers: next, current }));
-  }
-
-  function replay() {
-    const audio = audioRef.current;
-    if (!audio || !sentence) return;
-    audio.currentTime = sentence.startTime;
-    void audio.play();
-    setIsPlaying(true);
-  }
-
-  function togglePlayback() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) { void audio.play(); setIsPlaying(true); }
-    else { audio.pause(); setIsPlaying(false); }
   }
 
   function nextHint() {
+    if (!sentence || hintLevel >= 3 || scores[sentence.id]) return;
     setHintLevel((level) => {
       const next = Math.min(3, level + 1);
       if (sentence) setHintCounts((old) => ({ ...old, [sentence.id]: next }));
@@ -217,15 +430,27 @@ export default function Home() {
     });
   }
 
+  function toggleTranscript() {
+    if (!sentence || (!transcriptOn && scores[sentence.id])) return;
+    setTranscriptOn((visible) => {
+      if (!visible) setTranscriptUsed((old) => ({ ...old, [sentence.id]: true }));
+      return !visible;
+    });
+  }
+
   function confirmSentence() {
-    if (!sentence) return;
+    if (!sentence || sending) return;
+    if (!answer.trim()) { setError('Nhập câu trả lời trước khi xác nhận câu này.'); return; }
+    invalidateCompletedResult();
     const currentScore = compareDictation(sentence.textContent, answer);
     const penalty = hintPenalty(hintLevel, hintPenalties);
     setScores((old) => ({ ...old, [sentence.id]: { ...currentScore, accuracy: Math.max(0, currentScore.accuracy - penalty) } }));
+    setError('');
   }
 
   function retrySentence() {
-    if (!sentence) return;
+    if (!sentence || sending) return;
+    invalidateCompletedResult();
     const next = { ...answers, [sentence.id]: '' };
     setAnswers(next);
     setScores((old) => { const copy = { ...old }; delete copy[sentence.id]; return copy; });
@@ -234,54 +459,257 @@ export default function Home() {
     setTranscriptOn(false);
     setFillReset((version) => version + 1);
     setHintLevel(0);
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ lessonId: lesson?.id, answers: next, current }));
+  }
+
+  function invalidateCompletedResult() {
+    if (!hasCompleted) return;
+    setHasCompleted(false);
+    setCompletionScore(null);
+    setCompletionSyncPending(false);
+    if (!lesson) return;
+    const pendingRaw = localStorage.getItem(PENDING_KEY);
+    if (!pendingRaw) return;
+    try {
+      const pending = JSON.parse(pendingRaw) as { lessonId?: string };
+      if (pending.lessonId === lesson.id) localStorage.removeItem(PENDING_KEY);
+    } catch { localStorage.removeItem(PENDING_KEY); }
+  }
+
+  function persistCompletedResult(totalScore: number) {
+    if (!lesson) return;
+    const completedDraft: LessonDraft = {
+      lessonId: lesson.id, answers, current, hintCounts, transcriptUsed, scores, mode,
+      savedAt: new Date().toISOString(), isCompleted: true, totalScore,
+    };
+    latestDraftRef.current = completedDraft;
+    setHasCompleted(true);
+    setCompletionScore(totalScore);
+    setRecentLesson(lesson.id, 'COMPLETED');
+    try {
+      localStorage.setItem(lessonDraftKey(lesson.id), JSON.stringify(completedDraft));
+      setSavedDrafts(readLessonDrafts());
+    } catch {
+      setError('Điểm đã tính nhưng không thể lưu vào trình duyệt. Hãy kiểm tra dung lượng lưu trữ.');
+    }
+  }
+
+  function updateStoredCompletedScore(lessonId: string, totalScore: number) {
+    const previous = readLessonDraft(lessonId);
+    if (!previous) return;
+    const completedDraft = { ...previous, isCompleted: true, totalScore, savedAt: new Date().toISOString() };
+    try {
+      localStorage.setItem(lessonDraftKey(lessonId), JSON.stringify(completedDraft));
+      setSavedDrafts(readLessonDrafts());
+    } catch { /* The local score was already saved before the request. */ }
   }
 
   async function finishLesson() {
     if (!lesson || sending) return;
+    const firstUnconfirmed = sentences.findIndex((item) => !scores[item.id]);
+    if (firstUnconfirmed >= 0) {
+      setCurrent(firstUnconfirmed);
+      setHintLevel(hintCounts[sentences[firstUnconfirmed]?.id] ?? 0);
+      setError(`Còn ${sentences.filter((item) => !scores[item.id]).length} câu chưa được xác nhận. Hãy kiểm tra và xác nhận từng câu trước khi nhận điểm tổng.`);
+      return;
+    }
     setSending(true);
     setError('');
+    const submittedLessonId = lesson.id;
     try {
-      if (sentences.some((item) => !scores[item.id])) throw new Error('Hãy xác nhận câu trả lời cho tất cả câu trước khi hoàn thành.');
       const submissions: Submission[] = sentences.map((item) => ({
         sentenceId: item.id,
         textInput: answers[item.id] ?? '',
         hintCount: hintCounts[item.id] ?? 0,
         usedTranscriptHint: Boolean(transcriptUsed[item.id]),
       }));
-      const savedDraft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}');
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...savedDraft, pendingSubmission: { lessonId: lesson.id, answers: submissions } }));
-      await apiFetch('/practice/dictation/submit', {
+      const localTotalScore = average;
+      localStorage.setItem(PENDING_KEY, JSON.stringify({ lessonId: lesson.id, answers: submissions }));
+      persistCompletedResult(localTotalScore);
+      const result = await apiFetch<{ overallScore?: number }>('/practice/dictation/submit', {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id, answers: submissions }),
       });
-      localStorage.removeItem(DRAFT_KEY);
-      setFinished(true);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) {
-        clearExpiredToken();
-        setLoginPrompt(true);
+      const pendingRaw = localStorage.getItem(PENDING_KEY);
+      if (pendingRaw) {
+        try {
+          const pending = JSON.parse(pendingRaw) as { lessonId?: string };
+          if (pending.lessonId === submittedLessonId) localStorage.removeItem(PENDING_KEY);
+        } catch { localStorage.removeItem(PENDING_KEY); }
+      }
+      const finalScore = Number.isFinite(result.overallScore) ? result.overallScore! : localTotalScore;
+      if (!isLeavingLessonRef.current && activeLessonIdRef.current === submittedLessonId) {
+        persistCompletedResult(finalScore);
+        setCompletionSyncPending(false);
+        setFinished(true);
       } else {
-        setError(`Chưa đồng bộ được kết quả. Bản nháp sẽ tự đồng bộ khi có mạng. ${(e as Error).message}`);
+        updateStoredCompletedScore(submittedLessonId, finalScore);
+      }
+    } catch (e) {
+      if (!isLeavingLessonRef.current && activeLessonIdRef.current === submittedLessonId) {
+        if (e instanceof ApiError && e.status === 401) setLoginPrompt(true);
+        setCompletionSyncPending(true);
+        setError(`Điểm tạm thời đã lưu trên thiết bị; kết quả sẽ tự đồng bộ khi kết nối được máy chủ. ${(e as Error).message}`);
+        setFinished(true);
       }
     } finally { setSending(false); }
   }
 
-  function returnToLibrary() {
-    skipUrlLessonRef.current = true;
-    router.push('/practice/dictation');
+  function persistLatestDraft() {
+    const draft = latestDraftRef.current;
+    if (!draft) return;
+    try {
+      localStorage.setItem(lessonDraftKey(draft.lessonId), JSON.stringify(draft));
+      setSavedDrafts(readLessonDrafts());
+    } catch {
+      setError('Không thể tự lưu tiến trình trên thiết bị này. Hãy kiểm tra dung lượng lưu trữ trình duyệt.');
+    }
+  }
+
+  function clearActiveLesson() {
+    activeLessonIdRef.current = null;
     setLesson(null);
     setFinished(false);
+    setHasCompleted(false);
+    setCompletionScore(null);
+    setCompletionSyncPending(false);
     setSentences([]);
     setScores({});
     setAnswers({});
+    setHintCounts({});
+    setTranscriptUsed({});
+    setCurrent(0);
+    setHintLevel(0);
+    setDraftReady(false);
   }
+
+  function returnToLibrary() {
+    persistLatestDraft();
+    openedFromLibraryRef.current = false;
+    isLeavingLessonRef.current = true;
+    setResumeSelection(null);
+    router.replace('/practice/dictation');
+    clearActiveLesson();
+  }
+
+  function restartCurrentLesson() {
+    if (!lesson) return;
+    localStorage.removeItem(lessonDraftKey(lesson.id));
+    const pendingRaw = localStorage.getItem(PENDING_KEY);
+    if (pendingRaw) {
+      try {
+        const pending = JSON.parse(pendingRaw) as { lessonId?: string };
+        if (pending.lessonId === lesson.id) localStorage.removeItem(PENDING_KEY);
+      } catch { localStorage.removeItem(PENDING_KEY); }
+    }
+    setAnswers({});
+    setCurrent(0);
+    setHintLevel(0);
+    setHintCounts({});
+    setTranscriptOn(false);
+    setTranscriptUsed({});
+    setScores({});
+    setMode('FULL');
+    setHasCompleted(false);
+    setCompletionScore(null);
+    setCompletionSyncPending(false);
+    setDraftReady(true);
+    setFinished(false);
+    setRecentLesson(lesson.id, 'IN_PROGRESS');
+    setSavedDrafts(readLessonDrafts());
+  }
+
+  function selectSentence(index: number) {
+    setCurrent(index);
+    setHintLevel(hintCounts[sentences[index]?.id] ?? 0);
+    setTranscriptOn(false);
+    setError('');
+  }
+
+  function seekToTimeAndSelectSentence(time: number) {
+    if (!sentences.length) return time;
+    let index = sentences.findIndex((item) => time >= item.startTime && time < item.endTime);
+    let targetTime = time;
+    if (index < 0) {
+      const nextIndex = sentences.findIndex((item) => item.startTime > time);
+      if (nextIndex >= 0) {
+        index = nextIndex;
+        targetTime = sentences[nextIndex].startTime;
+      } else {
+        index = sentences.length - 1;
+        targetTime = Math.max(sentences[index].startTime, sentences[index].endTime - 0.05);
+      }
+    }
+    if (index !== current) selectSentence(index);
+    return targetTime;
+  }
+
+  function goBackFromLibrary() {
+    router.replace('/');
+  }
+
+  useEffect(() => {
+    if (!lesson) return;
+    const handleBackNavigation = () => {
+      if (isLeavingLessonRef.current) return;
+      persistLatestDraft();
+      isLeavingLessonRef.current = true;
+      openedFromLibraryRef.current = false;
+      clearActiveLesson();
+    };
+    window.addEventListener('popstate', handleBackNavigation);
+    return () => window.removeEventListener('popstate', handleBackNavigation);
+  }, [lesson]);
+
+  useEffect(() => {
+    if (!lesson || finished) return;
+    const handleShortcut = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const isTyping = Boolean(target?.closest('input, textarea, select, [contenteditable="true"]'));
+      const isControl = Boolean(target?.closest('button, a, [role="button"]'));
+      if (event.repeat) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        returnToLibrary();
+        return;
+      }
+      if (isTyping || isControl || event.metaKey || event.ctrlKey) return;
+      if (event.altKey) {
+        const shortcut = event.key.toLowerCase();
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          selectSentence(Math.max(0, Math.min(sentences.length - 1, current + (event.key === 'ArrowRight' ? 1 : -1))));
+        } else if (shortcut === 'm') {
+          event.preventDefault();
+          document.querySelector<HTMLButtonElement>('.media-play-button')?.click();
+        } else if (shortcut === 'r') {
+          event.preventDefault();
+          document.querySelector<HTMLButtonElement>('.media-replay-button')?.click();
+        } else if (shortcut === 't') {
+          event.preventDefault();
+          retrySentence();
+        } else if (shortcut === 'g') {
+          event.preventDefault();
+          nextHint();
+        } else if (shortcut === 'p') {
+          event.preventDefault();
+          toggleTranscript();
+        } else return;
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        confirmSentence();
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [lesson, finished, current, sentences, answers, scores, hintLevel, hintCounts, transcriptUsed, transcriptOn]);
 
   if (loading) return <main className="dictation-screen min-h-screen bg-slate-50 p-8 text-slate-600">Đang tải bài Dictation…</main>;
   if (!lesson) return (
     <main className="dictation-screen min-h-screen bg-slate-50 px-5 py-12 text-slate-900">
       <div className="mx-auto max-w-5xl">
-        <header className="mb-10"><Link href="/" className="dictation-home-link">← Về trang chủ</Link><p className="text-sm font-semibold uppercase tracking-[.2em] text-indigo-600">Shadowtation · Dictation</p><h1 className="mt-3 text-4xl font-bold">Chọn bài luyện nghe</h1><p className="mt-2 text-slate-500">Nghe từng câu, chép lại và nhận phản hồi tức thì.</p></header>
+        <header className="mb-10"><button type="button" onClick={goBackFromLibrary} className="dictation-back-link">← Quay lại</button><p className="text-sm font-semibold uppercase tracking-[.2em] text-indigo-600">Shadowtation · Dictation</p><h1 className="mt-3 text-4xl font-bold">Chọn bài luyện nghe</h1><p className="mt-2 text-slate-500">Nghe từng câu, chép lại và nhận phản hồi tức thì.</p></header>
         {error && <p role="alert" className="mb-5 rounded-xl bg-rose-50 p-4 text-rose-700">{error}</p>}
         <div className="dictation-library-tools">
           <div className="library-search" role="search"><Search aria-hidden="true" size={19} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm bài nghe theo tên..." aria-label="Tìm bài nghe" />{search && <button type="button" className="search-clear" aria-label="Xóa nội dung tìm kiếm" onClick={() => setSearch('')}><X size={17} /></button>}</div>
@@ -289,11 +717,26 @@ export default function Home() {
           <select aria-label="Lọc loại nội dung" value={mediaFilter} onChange={(event) => setMediaFilter(event.target.value)}><option value="ALL">Audio, video, podcast</option><option value="AUDIO">Audio</option><option value="VIDEO">Video</option><option value="PODCAST">Podcast</option></select>
           <button onClick={() => setShowFavorites((value) => !value)} className={showFavorites ? 'library-filter active' : 'library-filter'}>{showFavorites ? '♥ Đang xem yêu thích' : '♡ Yêu thích'}</button>
         </div>
+        {recentLibraryItems.length > 0 && <section className="dictation-recent-section" aria-labelledby="recent-lessons-title">
+          <h2 id="recent-lessons-title" className="library-section-title">Bài đang luyện dở &amp; học gần đây <span>{recentLibraryItems.length}</span></h2>
+          <p className="mb-4 text-sm text-slate-600">Tiến trình mới nhất được tự lưu trên thiết bị này. Chọn bài để tiếp tục hoặc làm lại từ đầu.</p>
+          <div className="dictation-library-grid">
+            {recentLibraryItems.map(({ lesson: item, recent, draft }) => <article key={`recent-${item.id}`} className="dictation-lesson-card recent-lesson-card">
+              <button onClick={() => beginLesson(item)} className="lesson-select">
+                <div className="lesson-badges"><span className={`recent-status-badge ${draft?.isCompleted || recent.status === 'COMPLETED' ? 'completed' : draft ? 'in-progress' : ''}`}>{draft?.isCompleted || recent.status === 'COMPLETED' ? 'Đã hoàn thành' : draft ? 'Đang luyện dở' : 'Đã mở gần đây'}</span><span className={`media-type-badge media-type-${(item.mediaType ?? 'AUDIO').toLowerCase()}`}>{mediaTypeLabel(item.mediaType)}</span></div>
+                <h3 className="mt-4 text-lg font-bold">{item.title}</h3>
+                <p className="mt-2 text-sm text-slate-500">{draft ? `${Object.keys(draft.scores).length}/${item.sentenceCount} câu đã xác nhận · ${item.sentenceCount ? Math.round(Object.keys(draft.scores).length / item.sentenceCount * 100) : 0}% hoàn thành` : `${formatDuration(item.durationSeconds)} · ${item.sentenceCount} câu`}</p>
+                {draft?.isCompleted && typeof draft.totalScore === 'number' && <p className="mt-2 text-sm font-bold text-indigo-700">Điểm tổng: {draft.totalScore}/100</p>}
+                <span className="mt-5 inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">{draft ? 'Mở tiến trình →' : 'Luyện lại →'}</span>
+              </button>
+            </article>)}
+          </div>
+        </section>}
         <h2 className="library-section-title">Bài học có sẵn <span>{visibleLessons.length}</span></h2>
         <div className="dictation-library-grid">
         {visibleLessons.map((item) => <article key={item.id} className="dictation-lesson-card"><button aria-label={favorites.includes(item.id) ? 'Bỏ yêu thích' : 'Thêm yêu thích'} title={favorites.includes(item.id) ? 'Bỏ yêu thích' : 'Thêm vào yêu thích'} className="lesson-heart" onClick={() => toggleFavorite(item.id)}>{favorites.includes(item.id) ? '♥' : '♡'}</button><button onClick={() => beginLesson(item)} className="lesson-select">
-            <div className="lesson-badges"><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">{item.level}</span><span className="media-type-badge">{item.mediaType ?? 'AUDIO'}</span>{item.access === 'LOCKED' ? <span className="premium-badge">🔒 Mở khóa Premium</span> : item.isPremiumOnly && <span className="premium-badge">✦ Premium</span>}</div>
-            <h2 className="mt-5 text-xl font-bold">{item.title}</h2><p className="mt-2 text-sm text-slate-500">{item.sentenceCount} câu · Luyện nghe chép chính tả</p>
+            <div className="lesson-badges"><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">{item.level}</span><span className={`media-type-badge media-type-${(item.mediaType ?? 'AUDIO').toLowerCase()}`}>{mediaTypeLabel(item.mediaType)}</span>{item.access === 'LOCKED' ? <span className="premium-badge">🔒 Mở khóa Premium</span> : item.isPremiumOnly && <span className="premium-badge">✦ Premium</span>}</div>
+            <h2 className="mt-5 text-xl font-bold">{item.title}</h2><p className="mt-2 text-sm text-slate-500">{formatDuration(item.durationSeconds)} · {item.sentenceCount} câu · Có transcript tiếng Anh</p><p className="lesson-source-name">Nguồn: {item.sourceName || 'Bài học có sẵn'}</p>
             <span className="mt-6 inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Bắt đầu →</span>
           </button></article>)}
           {!visibleLessons.length && <div className="library-empty">{lessons.length ? 'Không có bài học phù hợp bộ lọc.' : 'Chưa có bài Dictation được xuất bản.'}</div>}
@@ -324,36 +767,34 @@ export default function Home() {
           </div>
         </section>
       </div>
-      {lockedLesson && <div role="dialog" aria-modal="true" aria-labelledby="premium-title" className="fixed inset-0 z-20 grid place-items-center bg-slate-950/50 p-5"><section className="w-full max-w-md rounded-2xl bg-white p-7 shadow-2xl"><p className="text-sm font-bold uppercase tracking-wider text-amber-700">Bài học Premium</p><h2 id="premium-title" className="mt-2 text-2xl font-bold">Mở khóa bài học</h2><p className="mt-3 text-slate-600">“{lockedLesson.title}” dành cho học viên Premium. Nâng cấp để tiếp tục luyện tập.</p><div className="mt-6 flex justify-end gap-3"><button onClick={() => setLockedLesson(null)} className="rounded-lg border px-4 py-2 font-semibold">Để sau</button><button onClick={() => { window.location.href = '/subscription'; }} className="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Xem gói Premium</button></div></section></div>}
+      {resumeSelection && <ResumeLessonDialog lessonTitle={resumeSelection.lesson.title} savedAt={resumeSelection.draft.savedAt} confirmedCount={Object.keys(resumeSelection.draft.scores).length} totalScore={resumeSelection.draft.isCompleted ? resumeSelection.draft.totalScore : null} onContinue={resumeSavedLesson} onRestart={restartSavedLesson} />}
+      {lockedLesson && <PremiumRequiredDialog lessonTitle={lockedLesson.title} onClose={() => setLockedLesson(null)} />}
       {loginPrompt && <LoginRequiredDialog onClose={() => setLoginPrompt(false)} />}
     </main>
   );
 
-  if (finished) return <main className="dictation-screen completion-screen grid min-h-screen place-items-center bg-slate-50 p-6"><section className="w-full max-w-lg rounded-3xl bg-white p-10 text-center shadow-xl"><div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">✓</div><h1 className="mt-5 text-3xl font-bold">Hoàn thành bài luyện tập</h1><p className="mt-2 text-slate-500">{lesson.title}</p><p className="mt-8 text-6xl font-black text-indigo-600">{average}<span className="text-2xl">%</span></p><p className="mt-2 text-slate-500">Điểm trung bình {completedCount} câu đã xác nhận</p><button onClick={returnToLibrary} className="mt-8 rounded-xl bg-indigo-600 px-6 py-3 font-semibold text-white">Chọn bài khác</button></section></main>;
+  if (finished) return <main className="dictation-screen completion-screen grid min-h-screen place-items-center bg-slate-50 p-6"><section className="completion-card w-full max-w-lg rounded-3xl bg-white p-8 text-center shadow-xl md:p-10"><div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">✓</div><h1 className="mt-5 text-3xl font-bold">Hoàn thành bài luyện tập</h1><p className="mt-2 text-slate-500">{lesson.title}</p><p className="mt-8 text-6xl font-black text-indigo-600">{completionScore ?? average}<span className="text-2xl">/100</span></p><p className="mt-2 text-slate-500">Điểm tổng · {completedCount}/{sentences.length} câu đã xác nhận</p><div className="completion-progress" role="progressbar" aria-label="Tiến độ hoàn thành" aria-valuenow={sentences.length ? Math.round(completedCount / sentences.length * 100) : 0} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div>{completionSyncPending && <p role="status" className="completion-sync-note">Điểm và tiến trình đã lưu trên thiết bị; sẽ đồng bộ với máy chủ khi kết nối được khôi phục.</p>}{error && <p role="alert" className="completion-sync-note">{error}</p>}<div className="completion-actions"><button type="button" onClick={restartCurrentLesson}>1. Làm lại từ đầu</button><button type="button" onClick={returnToLibrary}>2. Chọn bài luyện khác</button><button type="button" onClick={() => setFinished(false)}>3. Tiếp tục làm và chỉnh sửa tiến trình</button></div>{loginPrompt && <LoginRequiredDialog onClose={() => setLoginPrompt(false)} />}</section></main>;
 
   return (
     <main className="dictation-screen min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b bg-white"><div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4"><div className="flex flex-wrap items-center gap-4"><Link href="/" className="dictation-home-link">← Về trang chủ</Link><button onClick={returnToLibrary} className="font-bold text-indigo-700">Danh sách bài</button></div><div className="text-right"><p className="font-bold">{lesson.title}</p><p className="text-xs text-slate-500">{lesson.level}</p></div></div></header>
+      <header className="border-b bg-white"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4"><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={returnToLibrary} className="dictation-back-link">← Danh sách bài</button><button type="button" onClick={returnToLibrary} className="dictation-exit-button">Thoát bài</button></div><div className="text-right"><p className="font-bold">{lesson.title}</p><p className="text-xs text-slate-500">{lesson.level}</p></div></div></header>
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-7 lg:grid-cols-[260px_1fr]">
-        <aside className="rounded-2xl border bg-white p-5"><div className="flex justify-between text-sm"><span className="font-bold">Tiến độ</span><span>{completedCount}/{sentences.length} câu</span></div><div className="mt-3 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-indigo-600" style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div><nav className="mt-5 grid grid-cols-5 gap-2 lg:grid-cols-3">{sentences.map((item, i) => <button key={item.id} onClick={() => { setCurrent(i); setHintLevel(0); }} aria-label={`Câu ${i + 1}`} className={`h-10 rounded-lg text-sm font-bold ${current === i ? 'bg-indigo-600 text-white' : scores[item.id] ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{i + 1}</button>)}</nav><div className="mt-6 rounded-xl bg-indigo-50 p-4"><p className="text-xs font-semibold uppercase text-indigo-600">Điểm tạm tính</p><p className="mt-1 text-3xl font-black text-indigo-800">{average}%</p></div></aside>
-        <section className="min-w-0 rounded-2xl border bg-white p-5 shadow-sm md:p-8">
+        <aside className="rounded-2xl border bg-white p-5"><div className="flex justify-between text-sm"><span className="font-bold">Tiến độ</span><span>{completedCount}/{sentences.length} câu</span></div><div className="mt-3 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-indigo-600" style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div><nav className="mt-5 grid grid-cols-5 gap-2 lg:grid-cols-3">{sentences.map((item, i) => <button key={item.id} onClick={() => selectSentence(i)} aria-label={`Câu ${i + 1}`} className={`h-10 rounded-lg text-sm font-bold ${current === i ? 'bg-indigo-600 text-white' : scores[item.id] ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{i + 1}</button>)}</nav>{hasCompleted && typeof completionScore === 'number' && <div className="mt-6 rounded-xl bg-indigo-50 p-4"><p className="text-xs font-semibold uppercase text-indigo-600">Điểm tổng đã lưu</p><p className="mt-1 text-3xl font-black text-indigo-800">{completionScore}/100</p></div>}</aside>
+        <section className="dictation-workbench min-w-0 rounded-2xl border bg-white p-5 shadow-sm md:p-8">
           {error && <p role="alert" className="mb-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error}</p>}
-          {!sentence ? <p className="py-12 text-center text-slate-500">Đang tải nội dung bài học…</p> : <>
+          {!sentence ? <div className="py-12 text-center text-slate-600">{error ? <><p>{error}</p><button type="button" onClick={returnToLibrary} className="dictation-back-link mt-5">← Danh sách bài học</button></> : 'Đang tải nội dung bài học…'}</div> : <>
             <div className="practice-method-tabs" role="tablist" aria-label="Phương pháp luyện tập"><button role="tab" aria-selected="true" className="method-active">Dictation</button><Link role="tab" aria-selected="false" href="/features/uc-04">Shadowing <span className="method-soon">sắp ra mắt</span></Link></div>
-            <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold text-indigo-600">CÂU {current + 1} / {sentences.length}</p><h1 className="mt-1 text-2xl font-bold">Nghe và nhập nội dung</h1></div><div className="flex rounded-xl bg-slate-100 p-1"><button onClick={() => setMode('FULL')} className={`rounded-lg px-3 py-2 text-sm ${mode === 'FULL' ? 'bg-white font-bold shadow-sm' : ''}`}>Chép cả câu</button><button onClick={() => setMode('BLANKS')} className={`rounded-lg px-3 py-2 text-sm ${mode === 'BLANKS' ? 'bg-white font-bold shadow-sm' : ''}`}>Điền từ khuyết</button></div></div>
-            <audio ref={audioRef} src={lesson.mediaType === 'VIDEO' ? undefined : lesson.audioUrl} preload="metadata" onLoadedMetadata={(event) => setAudioDuration(event.currentTarget.duration || 0)} onTimeUpdate={(event) => { setAudioTime(event.currentTarget.currentTime); if (sentence && event.currentTarget.currentTime >= sentence.endTime) { event.currentTarget.pause(); setIsPlaying(false); } }} onEnded={() => setIsPlaying(false)} onError={() => { if (lesson.mediaType !== 'VIDEO') setError('Audio không tải được. Hãy kiểm tra kết nối và thử tải lại trang.'); }} />
-             {lesson.mediaType === 'VIDEO' ? <div className="lesson-video-panel">{embedVideo ? <iframe key={sentence.id} title={`YouTube lesson: ${lesson.title}, sentence ${current + 1}`} src={embedVideo} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /> : <p>Video này cần URL YouTube hợp lệ.</p>}<p>YouTube · Câu {current + 1} · {sentence.startTime.toFixed(1)}s–{sentence.endTime.toFixed(1)}s. Nhấn phát trên video để nghe câu hiện tại.</p><div className="video-sentence-timeline"><div><strong>Timeline theo câu</strong><span>{formatTime(sentence.startTime)} – {formatTime(sentence.endTime)}</span></div><input aria-label="Tua đến câu" type="range" min={0} max={Math.max(sentences.length - 1, 0)} step={1} value={current} onChange={(event) => { setCurrent(Number(event.target.value)); setHintLevel(0); setTranscriptOn(false); }} /><div><span>0:00</span><span>{formatTime(sentences[sentences.length - 1]?.endTime ?? 0)}</span></div></div></div> : (
-              <div className="mt-7 rounded-2xl bg-slate-900 p-5 text-white"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-sm text-slate-300">Đoạn audio của câu hiện tại</p><p className="mt-1 font-semibold">{sentence.startTime.toFixed(1)}s — {sentence.endTime.toFixed(1)}s</p></div><button onClick={togglePlayback} className="rounded-xl bg-white px-5 py-3 font-bold text-slate-900">{isPlaying ? 'Ⅱ Tạm dừng' : '▶ Phát'}</button></div><div className="audio-seek"><span>{audioTime.toFixed(1)}s</span><input aria-label="Tua audio" type="range" min={sentence.startTime} max={Math.max(sentence.endTime, sentence.startTime + 0.1)} step="0.1" value={Math.min(Math.max(audioTime, sentence.startTime), sentence.endTime)} onChange={(event) => { const value = Number(event.target.value); if (audioRef.current) audioRef.current.currentTime = value; setAudioTime(value); }} /><span>{sentence.endTime.toFixed(1)}s</span><span className="audio-duration">/{audioDuration ? `${audioDuration.toFixed(1)}s` : '—'}</span></div><div className="mt-4 flex items-center gap-3 text-sm"><span>Tốc độ</span><button onClick={() => { if (audioRef.current) audioRef.current.playbackRate = 0.75; }}>0.75×</button><button onClick={() => { if (audioRef.current) audioRef.current.playbackRate = 1; }}>1×</button><button onClick={replay}>↻ Nghe lại câu</button></div></div>
-            )}
-            <div className="mt-6 flex flex-wrap items-center gap-3"><button onClick={nextHint} disabled={hintLevel >= 3} className="rounded-xl border border-indigo-200 px-4 py-2.5 font-semibold text-indigo-700 disabled:opacity-40">✦ Gợi ý {hintLevel ? `(${hintLevel}/3 · −${hintPenalty(hintLevel, hintPenalties)}đ)` : ''}</button><button onClick={() => { setTranscriptOn((value) => { if (!value && sentence) setTranscriptUsed((old) => ({ ...old, [sentence.id]: true })); return !value; }); }} className={`rounded-xl border px-4 py-2.5 font-semibold ${transcriptOn ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-slate-200 text-slate-700'}`}>{transcriptOn ? 'Ẩn transcript' : 'Hiện transcript'}</button><button onClick={retrySentence} className="rounded-xl border border-slate-200 px-4 py-2.5 font-semibold text-slate-700">Thử lại câu</button><span className="text-xs text-slate-500">Dùng gợi ý sẽ giảm điểm câu.</span></div>
-            {hintLevel > 0 && <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-indigo-600">Gợi ý cấp {hintLevel}</p><p className="mt-1 font-mono text-lg text-indigo-950">{maskedHint(sentence.textContent, hintLevel)}</p></div>}
+            <div className="dictation-practice-heading"><div><p className="text-sm font-semibold text-indigo-600">CÂU {current + 1} / {sentences.length}</p><h1>Nghe và nhập nội dung</h1></div><div className="dictation-mode-switch"><button onClick={() => setMode('FULL')} aria-pressed={mode === 'FULL'} className={mode === 'FULL' ? 'active' : ''}>Chép cả câu</button><button onClick={() => setMode('BLANKS')} aria-pressed={mode === 'BLANKS'} className={mode === 'BLANKS' ? 'active' : ''}>Điền từ khuyết</button></div></div>
+            <div className="dictation-shortcuts" aria-label="Phím tắt Dictation"><strong>Phím tắt</strong><span><kbd>Alt</kbd>+<kbd>M</kbd> phát / tạm dừng</span><span><kbd>Alt</kbd>+<kbd>R</kbd> nghe lại</span><span><kbd>Alt</kbd>+<kbd>T</kbd> thử lại câu</span><span><kbd>Alt</kbd>+<kbd>G</kbd> gợi ý</span><span><kbd>Alt</kbd>+<kbd>P</kbd> transcript</span><span><kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> đổi câu</span>{lesson.mediaType !== 'VIDEO' && <><span><kbd>←</kbd>/<kbd>→</kbd> tua lùi / tới 5 giây</span><span><kbd>M</kbd> tắt / bật tiếng</span></>}<span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> xác nhận khi đang nhập · <kbd>Enter</kbd> khi không gõ</span><span><kbd>Esc</kbd> về danh sách · tự lưu</span><small>Các phím tắt không kích hoạt trong ô trả lời; Space luôn dùng để nhập khoảng trắng.</small></div>
+            <MediaDictationPlayer key={lesson.id} mediaType={lesson.mediaType ?? 'AUDIO'} mediaUrl={lesson.mediaType === 'VIDEO' ? (lesson.sourceUrl ?? lesson.audioUrl) : lesson.audioUrl} title={lesson.title} startTime={sentence.startTime} endTime={sentence.endTime} onSeekToTime={lesson.mediaType === 'VIDEO' ? undefined : seekToTimeAndSelectSentence} />
+            <div className="dictation-controls"><button onClick={nextHint} disabled={hintLevel >= 3 || Boolean(scores[sentence.id])} className="hint-action">✦ Gợi ý {hintLevel ? `(${hintLevel}/3 · −${hintPenalty(hintLevel, hintPenalties)}đ)` : ''}</button><button disabled={!transcriptOn && Boolean(scores[sentence.id])} onClick={toggleTranscript} className={`transcript-action ${transcriptOn ? 'active' : ''}`}>{transcriptOn ? 'Ẩn transcript' : 'Hiện transcript'}</button><button onClick={retrySentence}>Thử lại câu</button><span>Dùng gợi ý sẽ giảm điểm câu.</span></div>
+            {hintLevel > 0 && <div className="dictation-hint-card"><p>Gợi ý cấp {hintLevel} · Cấp cao hơn mở thêm manh mối</p><p>{maskedHint(sentence.textContent, hintLevel)}</p></div>}
             {transcriptOn && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-amber-800">Transcript</p><p className="mt-1 text-amber-950">{sentence.textContent}</p></div>}
-            <label htmlFor="dictation-answer" className="mt-7 block text-sm font-bold">Câu trả lời của bạn</label>
-            {mode === 'FULL' ? <textarea id="dictation-answer" value={answer} onChange={(event) => saveAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); confirmSentence(); } }} placeholder="Nhập những gì bạn nghe được…" rows={4} className="mt-2 w-full resize-y rounded-xl border border-slate-300 p-4 text-lg outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" /> : <FillBlanks key={`${sentence.id}-${fillReset}`} text={sentence.textContent} value={answer} onChange={saveAnswer} />}
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm"><span className="text-slate-500">Đối chiếu trực tiếp · cập nhật ngay khi bạn nhập</span>{liveScore && <span className="font-bold text-indigo-700">Độ chính xác hiện tại: {liveScore.accuracy}%</span>}</div>
-            {liveScore && <div aria-live="polite" className="mt-4 flex flex-wrap gap-x-2 gap-y-3 rounded-xl bg-slate-50 p-4">{liveScore.tokens.map((token, i) => <span key={`${i}-${token.reference}-${token.submitted}`} className={`rounded px-1.5 py-1 font-medium ${token.kind === 'correct' ? 'bg-emerald-100 text-emerald-800' : token.kind === 'insertion' ? 'bg-rose-200 text-rose-900 line-through' : 'bg-rose-100 text-rose-800'}`} title={token.kind}>{token.kind === 'omission' ? `−${token.reference}` : token.kind === 'insertion' ? `+${token.submitted}` : token.kind === 'substitution' ? `${token.submitted} → ${token.reference}` : token.submitted}</span>)}</div>}
-            {scores[sentence.id] && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="font-bold text-emerald-900">Đã xác nhận câu · {scores[sentence.id].accuracy}% sau gợi ý</p><p className="mt-1 text-sm text-emerald-800">Điểm này được tính vào kết quả cuối cùng. Chọn “Thử lại câu” để thay bằng lượt mới.</p></div>}
-            <div className="mt-6 flex flex-wrap justify-between gap-3"><button onClick={() => { setCurrent((i) => Math.max(0, i - 1)); setHintLevel(0); }} disabled={current === 0} className="rounded-xl border px-5 py-3 font-semibold disabled:opacity-40">← Câu trước</button><div className="flex gap-3"><button onClick={confirmSentence} className="rounded-xl border border-indigo-200 px-5 py-3 font-semibold text-indigo-700">Xác nhận câu</button>{current < sentences.length - 1 ? <button onClick={() => { setCurrent((i) => i + 1); setHintLevel(0); setTranscriptOn(false); }} className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white">Câu tiếp →</button> : <button disabled={sending} onClick={finishLesson} className="rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white disabled:opacity-50">{sending ? 'Đang lưu…' : 'Hoàn thành bài'}</button>}</div></div>
+            <label htmlFor="dictation-answer" className="dictation-answer-label">Câu trả lời của bạn</label>
+            {mode === 'FULL' ? <textarea id="dictation-answer" value={answer} onChange={(event) => saveAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); confirmSentence(); } }} placeholder="Nhập những gì bạn nghe được…" rows={4} className="dictation-answer-input" /> : <FillBlanks key={`${sentence.id}-${fillReset}`} text={sentence.textContent} value={answer} onChange={saveAnswer} onConfirm={confirmSentence} />}
+            <div className="dictation-live-feedback"><span>Đối chiếu trực tiếp · cập nhật ngay khi bạn nhập</span>{liveScore && <span className="live-accuracy">Độ chính xác hiện tại: {liveScore.accuracy}%</span>}</div>
+            {scores[sentence.id] && <div className="dictation-confirmed-result"><p>Đã xác nhận câu · {scores[sentence.id].accuracy}% sau gợi ý</p><span>Điểm này được tính vào kết quả cuối cùng. Chọn “Thử lại câu” để thay bằng lượt mới.</span></div>}
+            <div className="dictation-navigation"><button onClick={() => selectSentence(current - 1)} disabled={current === 0}>← Câu trước</button><div><button onClick={confirmSentence} className="confirm-answer-button">Xác nhận câu</button>{current < sentences.length - 1 ? <button onClick={() => selectSentence(current + 1)} className="next-sentence-button">Câu tiếp →</button> : <button disabled={sending} onClick={finishLesson} className="finish-lesson-button">{sending ? 'Đang lưu…' : 'Hoàn thành bài'}</button>}</div></div>
           </>}
         </section>
       </div>
@@ -363,13 +804,21 @@ export default function Home() {
 }
 
 function LoginRequiredDialog({ onClose }: { onClose: () => void }) {
-  return <div role="dialog" aria-modal="true" aria-labelledby="login-required-title" className="fixed inset-0 z-30 grid place-items-center bg-slate-950/50 p-5"><section className="w-full max-w-md rounded-2xl bg-white p-7 shadow-2xl"><p className="text-sm font-bold uppercase tracking-wider text-indigo-700">Tài khoản học viên</p><h2 id="login-required-title" className="mt-2 text-2xl font-bold">Đăng nhập để sử dụng</h2><p className="mt-3 text-slate-600">Bạn cần phải đăng nhập để sử dụng chức năng này. Bạn vẫn có thể xem danh sách bài học trước khi đăng nhập.</p><div className="mt-6 flex justify-end gap-3"><button onClick={onClose} className="rounded-lg border px-4 py-2 font-semibold">Để sau</button><Link href="/features/uc-01" className="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Đăng nhập</Link></div></section></div>;
+  return <div role="presentation" className="dictation-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="login-required-title" className="dictation-modal"><div className="dictation-modal-icon login-icon" aria-hidden="true">↗</div><p className="dictation-modal-eyebrow">Tài khoản học viên</p><h2 id="login-required-title">Đăng nhập để tiếp tục</h2><p className="dictation-modal-copy">Đăng nhập để bắt đầu bài học, lưu tiến độ và thêm nguồn nghe của riêng bạn.</p><div className="dictation-modal-actions"><button type="button" onClick={onClose} className="dictation-secondary-button">Để sau</button><Link href="/features/uc-01" className="dictation-primary-button">Đăng nhập</Link></div></section></div>;
 }
 
-function FillBlanks({ text, value, onChange }: { text: string; value: string; onChange: (value: string) => void }) {
+function ResumeLessonDialog({ lessonTitle, savedAt, confirmedCount, totalScore, onContinue, onRestart }: { lessonTitle: string; savedAt: string; confirmedCount: number; totalScore: number | null | undefined; onContinue: () => void; onRestart: () => void }) {
+  return <div role="presentation" className="dictation-modal-backdrop"><section role="dialog" aria-modal="true" aria-labelledby="resume-lesson-title" className="dictation-modal resume-lesson-modal"><div className="dictation-modal-icon" aria-hidden="true">↻</div><p className="dictation-modal-eyebrow">Đã tìm thấy tiến trình</p><h2 id="resume-lesson-title">Bạn muốn học tiếp thế nào?</h2><p className="dictation-modal-copy"><strong>{lessonTitle}</strong><br />Đã xác nhận {confirmedCount} câu{typeof totalScore === 'number' ? ` · Điểm tổng ${totalScore}/100` : ''}<br />Lưu lần cuối {new Date(savedAt).toLocaleString()}.</p><div className="dictation-modal-actions"><button type="button" onClick={onContinue} className="dictation-primary-button">Tiếp tục với tiến trình đã lưu</button><button type="button" onClick={onRestart} className="dictation-secondary-button">Làm lại từ đầu</button></div></section></div>;
+}
+
+function PremiumRequiredDialog({ lessonTitle, onClose }: { lessonTitle: string; onClose: () => void }) {
+  return <div role="presentation" className="dictation-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="premium-required-title" className="dictation-modal"><div className="dictation-modal-icon premium-icon" aria-hidden="true">★</div><p className="dictation-modal-eyebrow premium-eyebrow">Bài học Premium</p><h2 id="premium-required-title">Mở khóa bài học</h2><p className="dictation-modal-copy"><strong>{lessonTitle}</strong> nằm trong thư viện Premium. Chọn gói học để tiếp tục luyện tập bài này.</p><div className="dictation-modal-actions"><button type="button" onClick={onClose} className="dictation-secondary-button">Để sau</button><Link href="/subscription" className="dictation-primary-button premium-button">Xem gói học</Link></div></section></div>;
+}
+
+function FillBlanks({ text, value, onChange, onConfirm }: { text: string; value: string; onChange: (value: string) => void; onConfirm: () => void }) {
   const words = text.split(/\s+/);
   const slots = words.map((word, index) => index % 2 === 1);
   const existing = value ? value.split(/\s+/) : [];
   const [slotValues, setSlotValues] = useState<Record<number, string>>(() => Object.fromEntries(words.map((_, index) => [index, slots[index] ? existing[index] ?? '' : ''])));
-  return <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-300 p-4">{words.map((word, index) => slots[index] ? <input key={index} aria-label={`Từ còn thiếu ${Math.floor(index / 2) + 1}`} value={slotValues[index] ?? ''} onChange={(event) => { const nextSlots = { ...slotValues, [index]: event.target.value }; setSlotValues(nextSlots); const complete = words.every((_, i) => !slots[i] || (nextSlots[i] ?? '').trim()); onChange(complete ? words.map((item, i) => slots[i] ? nextSlots[i] : item).join(' ') : ''); }} className="w-28 rounded border-b-2 border-indigo-400 bg-indigo-50 px-2 py-1 outline-none focus:border-indigo-700" /> : <span key={index}>{word}</span>)}</div>;
+  return <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-300 p-4">{words.map((word, index) => slots[index] ? <input key={index} aria-label={`Từ còn thiếu ${Math.floor(index / 2) + 1}`} value={slotValues[index] ?? ''} onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); if (event.ctrlKey || event.metaKey) onConfirm(); else { const inputs = Array.from(event.currentTarget.parentElement?.querySelectorAll('input') ?? []); inputs[inputs.indexOf(event.currentTarget) + 1]?.focus(); } }} onChange={(event) => { const nextSlots = { ...slotValues, [index]: event.target.value }; setSlotValues(nextSlots); const complete = words.every((_, i) => !slots[i] || (nextSlots[i] ?? '').trim()); onChange(complete ? words.map((item, i) => slots[i] ? nextSlots[i] : item).join(' ') : ''); }} className="w-28 rounded border-b-2 border-indigo-400 bg-indigo-50 px-2 py-1 outline-none focus:border-indigo-700" /> : <span key={index}>{word}</span>)}</div>;
 }

@@ -24,6 +24,7 @@ tmp/
 *.mp3
 *.mp4
 *.m4a
+backend-api/src/database/seed_lessons.json
 
 # ===== Docker volumes cục bộ =====
 pgdata/

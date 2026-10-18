@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { Lesson, LessonLevel, LessonMediaType } from '../../database/entities/lesson.entity';
 import { LessonSentence } from '../../database/entities/lesson-sentence.entity';
@@ -7,6 +7,7 @@ import { User, UserRole } from '../../database/entities/user.entity';
 import { UserAttempt } from '../../database/entities/user-attempt.entity';
 import { SystemConfig } from '../../database/entities/system-config.entity';
 import { hintPenalty, normalizeWords, scoreDictation } from './dictation-scorer';
+import { fetchYouTubeSentences, isYouTubeHost, parseWebVtt } from './dictation-captions';
 
 export interface DictationAnswer {
   sentenceId: string;
@@ -75,8 +76,10 @@ export class DictationService {
     } catch {
       throw new BadRequestException('URL media không hợp lệ.');
     }
-    const youtubeHosts = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'youtube-nocookie.com', 'www.youtube-nocookie.com']);
-    if (useYouTubeCaptions && (lessonMediaType !== 'VIDEO' || !youtubeHosts.has(parsedUrl.hostname.toLowerCase()))) {
+    if (lessonMediaType === 'VIDEO' && !isYouTubeHost(parsedUrl.hostname)) {
+      throw new BadRequestException('Nguồn Video phải là đường dẫn YouTube để phát trực tiếp trên website.');
+    }
+    if (useYouTubeCaptions && (lessonMediaType !== 'VIDEO' || !isYouTubeHost(parsedUrl.hostname))) {
       throw new BadRequestException('Tự lấy phụ đề chỉ dùng được với URL video YouTube.');
     }
     if (captionsVtt.length > 1_000_000) {
@@ -86,56 +89,35 @@ export class DictationService {
       throw new BadRequestException('Hãy bật lấy phụ đề YouTube hoặc cung cấp phụ đề WebVTT có timestamp.');
     }
 
-    const workerKey = process.env.INTERNAL_API_KEY;
-    if (!workerKey) throw new ServiceUnavailableException('Thiếu cấu hình INTERNAL_API_KEY dùng chung giữa Backend và AI Worker.');
-    const workerUrl = (process.env.AI_WORKER_URL || 'http://localhost:8000').replace(/\/+$/, '');
-    let response: Response;
-    try {
-      response = await fetch(`${workerUrl}/internal/dictation/prepare`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Internal-Api-Key': workerKey },
-        body: JSON.stringify({ mediaUrl, mediaType: lessonMediaType, title, captionsVtt: captionsVtt || null, useYouTubeCaptions }),
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch {
-      throw new ServiceUnavailableException('AI Worker chưa phản hồi. Kiểm tra AI_WORKER_URL và trạng thái worker rồi thử lại.');
-    }
-
-    const result = await response.json().catch(() => null) as any;
-    if (!response.ok) {
-      const message = typeof result?.detail === 'string' ? result.detail : 'AI Worker không thể xử lý phụ đề này.';
-      if (response.status >= 400 && response.status < 500) throw new BadRequestException(message);
-      throw new BadGatewayException(message);
-    }
-    if (!result || typeof result.title !== 'string' || typeof result.mediaUrl !== 'string' ||
-      !['AUDIO', 'VIDEO', 'PODCAST'].includes(result.mediaType) || !Array.isArray(result.sentences) ||
-      result.sentences.length === 0 || result.sentences.length > 1_000) {
-      throw new BadGatewayException('AI Worker trả về dữ liệu bài học không hợp lệ.');
-    }
+    const transcriptSentences = captionsVtt.trim()
+      ? parseWebVtt(captionsVtt)
+      : await fetchYouTubeSentences(mediaUrl);
+    if (transcriptSentences.length > 1_000) throw new BadRequestException('Bài học có quá 1.000 câu phụ đề.');
     const orderIndices = new Set<number>();
-    for (const sentence of result.sentences) {
+    for (const sentence of transcriptSentences) {
       if (!Number.isInteger(sentence.orderIndex) || sentence.orderIndex < 1 || orderIndices.has(sentence.orderIndex) ||
         typeof sentence.text !== 'string' || !sentence.text.trim() || sentence.text.length > 2_000 ||
         !Number.isFinite(sentence.startTime) || !Number.isFinite(sentence.endTime) ||
         sentence.startTime < 0 || sentence.endTime <= sentence.startTime || sentence.endTime > 86_400) {
-        throw new BadGatewayException('AI Worker trả về câu hoặc timestamp không hợp lệ.');
+        throw new BadRequestException('Phụ đề trả về câu hoặc timestamp không hợp lệ.');
       }
       orderIndices.add(sentence.orderIndex);
     }
 
-    const parsedMediaUrl = new URL(result.mediaUrl);
-    const sourceName = parsedMediaUrl.hostname.slice(0, 150);
+    const sourceName = parsedUrl.hostname.slice(0, 150);
+    const lessonTitle = (title || parsedUrl.hostname).slice(0, 255);
+    const durationSeconds = Math.ceil(Math.max(...transcriptSentences.map((sentence) => sentence.endTime)));
     const saved = await this.dataSource.transaction(async (manager) => {
       const lessonRepo = manager.getRepository(Lesson);
       const lesson = await lessonRepo.save(lessonRepo.create({
-        title: result.title.slice(0, 255), level: lessonLevel,
-        audioUrl: result.mediaUrl, mediaType: result.mediaType as LessonMediaType,
-        sourceName, sourceUrl: result.mediaUrl,
-        durationSeconds: Number.isFinite(result.duration) ? Math.ceil(result.duration) : null,
+        title: lessonTitle, level: lessonLevel,
+        audioUrl: mediaUrl, mediaType: lessonMediaType,
+        sourceName, sourceUrl: mediaUrl,
+        durationSeconds,
         createdByUserId: user.id, isPremiumOnly: false, status: 'PUBLISHED',
       }));
       const sentenceRepo = manager.getRepository(LessonSentence);
-      const rows = result.sentences.map((sentence: { orderIndex: number; text: string; startTime: number; endTime: number }) => {
+      const rows = transcriptSentences.map((sentence) => {
         const words = sentence.text.trim().split(/\s+/).filter(Boolean);
         if (words.length > 300) throw new BadRequestException('Một câu phụ đề vượt quá giới hạn 300 từ.');
         const step = (sentence.endTime - sentence.startTime) / Math.max(words.length, 1);

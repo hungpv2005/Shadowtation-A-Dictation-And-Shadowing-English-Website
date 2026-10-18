@@ -5,7 +5,7 @@ export interface DiffWord { reference: string; submitted: string; operation: Dif
 export interface DictationResult { wer: number; accuracy: number; errors: number; words: WordScore[]; diff: DiffWord[]; reviewWords: string[] }
 
 export function normalizeWords(value: string): string[] {
-  return value.normalize('NFC').toLocaleLowerCase('en-US').replace(/[.,!?;:()[\]{}“”"…]/g, ' ').trim().split(/\s+/).filter(Boolean);
+  return value.normalize('NFC').toLocaleLowerCase('en-US').replace(/[.,!?;:()[\]{}“”"'‘’…—–\-\/]/g, ' ').trim().split(/\s+/).filter(Boolean);
 }
 
 export function scoreDictation(referenceText: string, submittedText: string, penalty: number): DictationResult {
