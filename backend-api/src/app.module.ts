@@ -10,6 +10,7 @@ import { DictationModule } from './practice/dictation/dictation.module';
 import { AuthModule } from './auth/auth.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { LessonModule } from './lesson/lesson.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { LessonModule } from './lesson/lesson.module';
     AuthModule,
     SubscriptionModule,
     LessonModule,
+    PaymentModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
