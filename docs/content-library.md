@@ -4,6 +4,8 @@
 
 `lessons.audio_url` là URL player nạp. `media_type` phân loại `AUDIO`, `VIDEO`, `PODCAST`; `source_name` và `source_url` lưu nguồn gốc để kiểm duyệt/ghi công. Mỗi bài phải có `lesson_sentences` với transcript đã duyệt và mốc `start_time` / `end_time`; backend chỉ trả bài `PUBLISHED`. Tệp audio nên đặt trên object storage/CDN có quyền sử dụng, không nhúng bản sao vào database.
 
+Ba bài audio hội thoại mẫu dùng các tệp trong `frontend/public/audio/`, được Next.js phục vụ tại `/audio/`. Hãy giữ các MP3 này trong Git vì dữ liệu seed tham chiếu trực tiếp đến chúng.
+
 ## Thêm một bài
 
 1. Chọn nội dung có giấy phép rõ ràng hoặc được chủ sở hữu cho phép. Ghi tên nguồn, URL gốc, license/credit và trình độ.

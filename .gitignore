@@ -22,6 +22,7 @@ tmp/
 *.wav
 *.webm
 *.mp3
+!frontend/public/audio/*.mp3
 *.mp4
 *.m4a
 backend-api/src/database/seed_lessons.json
