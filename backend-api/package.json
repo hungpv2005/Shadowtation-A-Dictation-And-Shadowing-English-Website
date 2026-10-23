@@ -11,7 +11,9 @@
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/data-source.ts",
-    "seed": "ts-node src/database/seed.ts"
+    "seed": "ts-node src/database/seed.ts",
+    "seed:batch": "ts-node src/database/generate-batch.ts",
+    "seed:presets": "npm run seed:batch -- src/database/preset_sources.json && npm run seed"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.7",
@@ -31,7 +33,8 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "swagger-ui-express": "^5.0.0",
-    "typeorm": "^0.3.20"
+    "typeorm": "^0.3.20",
+    "youtube-transcript": "^1.3.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.3.2",

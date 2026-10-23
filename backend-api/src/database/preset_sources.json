@@ -1,0 +1,62 @@
+[
+  {
+    "title": "Can AI solve crime? · 6 Minute English",
+    "sourceName": "BBC Learning English",
+    "mediaUrl": "https://www.youtube.com/watch?v=_zmMl7T8164",
+    "mediaType": "VIDEO",
+    "level": "INTERMEDIATE",
+    "useYouTubeCaptions": true,
+    "minimumSentenceCount": 20,
+    "minimumDurationSeconds": 300
+  },
+  {
+    "title": "Learning multiple languages · 6 Minute English",
+    "sourceName": "BBC Learning English",
+    "mediaUrl": "https://www.youtube.com/watch?v=9ifQ3xRz4hM",
+    "mediaType": "VIDEO",
+    "level": "INTERMEDIATE",
+    "useYouTubeCaptions": true,
+    "minimumSentenceCount": 20,
+    "minimumDurationSeconds": 300
+  },
+  {
+    "title": "Exercise for the lazy · 6 Minute English",
+    "sourceName": "BBC Learning English",
+    "mediaUrl": "https://www.youtube.com/watch?v=vq2x7k_nofw",
+    "mediaType": "VIDEO",
+    "level": "INTERMEDIATE",
+    "useYouTubeCaptions": true,
+    "minimumSentenceCount": 20,
+    "minimumDurationSeconds": 300
+  },
+  {
+    "title": "Feed your brain · 6 Minute English",
+    "sourceName": "BBC Learning English",
+    "mediaUrl": "https://www.youtube.com/watch?v=FZDImEiPgMk",
+    "mediaType": "VIDEO",
+    "level": "INTERMEDIATE",
+    "useYouTubeCaptions": true,
+    "minimumSentenceCount": 20,
+    "minimumDurationSeconds": 300
+  },
+  {
+    "title": "Can apps teach you a language? · BBC audio lesson",
+    "sourceName": "BBC Learning English",
+    "mediaUrl": "https://downloads.bbc.co.uk/learningenglish/features/6min/260910_6_minute_english_can_apps_teach_you_a_language_download.mp3",
+    "mediaType": "AUDIO",
+    "level": "INTERMEDIATE",
+    "captionsYouTubeUrl": "https://www.youtube.com/watch?v=-XcALxwXJVY",
+    "minimumSentenceCount": 20,
+    "minimumDurationSeconds": 300
+  },
+  {
+    "title": "Limiting screen time for children · BBC podcast",
+    "sourceName": "BBC Learning English",
+    "mediaUrl": "https://downloads.bbc.co.uk/learningenglish/features/6min/260618_6_minute_english_limiting_screen_time_for_children_download.mp3",
+    "mediaType": "PODCAST",
+    "level": "INTERMEDIATE",
+    "captionsYouTubeUrl": "https://www.youtube.com/watch?v=m7IlyBEyi3c",
+    "minimumSentenceCount": 20,
+    "minimumDurationSeconds": 300
+  }
+]
