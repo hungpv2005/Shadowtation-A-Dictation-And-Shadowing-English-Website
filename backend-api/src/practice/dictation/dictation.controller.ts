@@ -8,6 +8,13 @@ import { CreateCustomDictationInput, DictationAnswer, DictationService } from '.
 export class DictationController {
   constructor(private readonly dictationService: DictationService) {}
 
+  @Get('practice/dictation/history')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  history(@Req() req: any) {
+    return this.dictationService.getHistory(req.user.id ?? req.user.sub);
+  }
+
   @Get('practice/dictation/lessons')
   @UseGuards(OptionalJwtAuthGuard)
   listLessons(@Req() req: any, @Query('level') level?: string, @Query('mediaType') mediaType?: string, @Query('q') q?: string) {

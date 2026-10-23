@@ -7,7 +7,10 @@ export interface WordScore {
   word: string;
   accuracy_score: number;
   error_type: WordErrorType;
+  color?: 'GREEN' | 'YELLOW' | 'RED';
 }
+
+export type AssessmentSource = 'OPENAI' | 'MOCK' | 'LEGACY';
 
 @Entity('scores')
 export class Score {
@@ -20,6 +23,9 @@ export class Score {
 
   @Column({ name: 'overall_score', type: 'int' })
   overallScore!: number;
+
+  @Column({ name: 'assessment_source', type: 'varchar', length: 20, default: 'LEGACY' })
+  assessmentSource!: AssessmentSource;
 
   @Column({ name: 'accuracy_score', type: 'int' })
   accuracyScore!: number;

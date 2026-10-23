@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { LessonModule } from './lesson/lesson.module';
 import { PaymentModule } from './payment/payment.module';
+import { ShadowingModule } from './practice/shadowing/shadowing.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { PaymentModule } from './payment/payment.module';
     }),
     SpeechModule,
     DictationModule,
+    ShadowingModule,
     AuthModule,
     SubscriptionModule,
     LessonModule,
