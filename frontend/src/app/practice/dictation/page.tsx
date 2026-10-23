@@ -66,7 +66,7 @@ function readRecentLessons(): RecentLesson[] {
 function youtubeId(value: string) { try { const url = new URL(value); if (url.protocol !== 'https:' && url.protocol !== 'http:') return ''; if (url.hostname === 'youtu.be') return url.pathname.slice(1).split('/')[0]; if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(url.hostname)) return url.searchParams.get('v') || url.pathname.match(/\/(?:embed|shorts)\/([^/?]+)/)?.[1] || ''; } catch {} return ''; }
 function formatDuration(seconds?: number | null) { if (!seconds || seconds < 1) return 'Chưa rõ thời lượng'; const total = Math.floor(seconds); return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`; }
 function mediaTypeLabel(type?: Lesson['mediaType']) { if (type === 'VIDEO') return '▶ Video YouTube'; if (type === 'PODCAST') return '◉ Podcast'; return '♫ Audio'; }
-function hasLoginToken() { return typeof window !== 'undefined' && Boolean(localStorage.getItem('access_token') ?? localStorage.getItem('accessToken') ?? sessionStorage.getItem('access_token') ?? sessionStorage.getItem('accessToken')); }
+function hasLoginToken() { return typeof window !== 'undefined' && Boolean(localStorage.getItem('access_token') ?? localStorage.getItem('accessToken')); }
 
 function DictationPracticeInner() {
   const router = useRouter();
@@ -812,7 +812,7 @@ export default function Home() {
 }
 
 function LoginRequiredDialog({ onClose }: { onClose: () => void }) {
-  return <div role="presentation" className="dictation-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="login-required-title" className="dictation-modal"><div className="dictation-modal-icon login-icon" aria-hidden="true">↗</div><p className="dictation-modal-eyebrow">Tài khoản học viên</p><h2 id="login-required-title">Đăng nhập để tiếp tục</h2><p className="dictation-modal-copy">Đăng nhập để bắt đầu bài học, lưu tiến độ và thêm nguồn nghe của riêng bạn.</p><div className="dictation-modal-actions"><button type="button" onClick={onClose} className="dictation-secondary-button">Để sau</button><Link href="/login" className="dictation-primary-button">Đăng nhập</Link></div></section></div>;
+  return <div role="presentation" className="dictation-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="login-required-title" className="dictation-modal"><div className="dictation-modal-icon login-icon" aria-hidden="true">↗</div><p className="dictation-modal-eyebrow">Tài khoản học viên</p><h2 id="login-required-title">Đăng nhập để tiếp tục</h2><p className="dictation-modal-copy">Đăng nhập để bắt đầu bài học, lưu tiến độ và thêm nguồn nghe của riêng bạn.</p><div className="dictation-modal-actions"><button type="button" onClick={onClose} className="dictation-secondary-button">Để sau</button><Link href="/features/uc-01" className="dictation-primary-button">Đăng nhập</Link></div></section></div>;
 }
 
 function ResumeLessonDialog({ lessonTitle, savedAt, confirmedCount, totalScore, onContinue, onRestart }: { lessonTitle: string; savedAt: string; confirmedCount: number; totalScore: number | null | undefined; onContinue: () => void; onRestart: () => void }) {
