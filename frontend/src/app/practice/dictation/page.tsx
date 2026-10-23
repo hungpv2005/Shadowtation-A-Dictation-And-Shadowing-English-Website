@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, X } from 'lucide-react';
@@ -68,7 +68,7 @@ function formatDuration(seconds?: number | null) { if (!seconds || seconds < 1) 
 function mediaTypeLabel(type?: Lesson['mediaType']) { if (type === 'VIDEO') return '▶ Video YouTube'; if (type === 'PODCAST') return '◉ Podcast'; return '♫ Audio'; }
 function hasLoginToken() { return typeof window !== 'undefined' && Boolean(localStorage.getItem('access_token') ?? localStorage.getItem('accessToken')); }
 
-export default function Home() {
+function DictationPracticeInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedLessonId = searchParams.get('lesson');
@@ -800,6 +800,14 @@ export default function Home() {
       </div>
       {loginPrompt && <LoginRequiredDialog onClose={() => setLoginPrompt(false)} />}
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<main className="dictation-shell flex min-h-screen items-center justify-center"><p className="text-slate-600">Đang tải bài học...</p></main>}>
+      <DictationPracticeInner />
+    </Suspense>
   );
 }
 
