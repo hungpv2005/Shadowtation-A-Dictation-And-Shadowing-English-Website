@@ -66,7 +66,7 @@ function readRecentLessons(): RecentLesson[] {
 function youtubeId(value: string) { try { const url = new URL(value); if (url.protocol !== 'https:' && url.protocol !== 'http:') return ''; if (url.hostname === 'youtu.be') return url.pathname.slice(1).split('/')[0]; if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(url.hostname)) return url.searchParams.get('v') || url.pathname.match(/\/(?:embed|shorts)\/([^/?]+)/)?.[1] || ''; } catch {} return ''; }
 function formatDuration(seconds?: number | null) { if (!seconds || seconds < 1) return 'Chưa rõ thời lượng'; const total = Math.floor(seconds); return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`; }
 function mediaTypeLabel(type?: Lesson['mediaType']) { if (type === 'VIDEO') return '▶ Video YouTube'; if (type === 'PODCAST') return '◉ Podcast'; return '♫ Audio'; }
-function hasLoginToken() { return typeof window !== 'undefined' && Boolean(localStorage.getItem('access_token') ?? localStorage.getItem('accessToken')); }
+function hasLoginToken() { return typeof window !== 'undefined' && Boolean(localStorage.getItem('access_token') ?? localStorage.getItem('accessToken') ?? sessionStorage.getItem('access_token') ?? sessionStorage.getItem('accessToken')); }
 
 function DictationPracticeInner() {
   const router = useRouter();
