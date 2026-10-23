@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard, OptionalJwtAuthGuard } from './jwt-auth.guard';
+import { JwtAuthGuard, OptionalJwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CreateCustomDictationInput, DictationAnswer, DictationService } from './dictation.service';
 
 @ApiTags('Dictation')

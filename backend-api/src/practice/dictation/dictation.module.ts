@@ -1,7 +1,11 @@
 import { Module } from '@nestjs/common';
 import { DictationController } from './dictation.controller';
 import { DictationService } from './dictation.service';
-import { JwtAuthGuard, OptionalJwtAuthGuard } from './jwt-auth.guard';
+import { AuthModule } from '../../auth/auth.module';
 
-@Module({ controllers: [DictationController], providers: [DictationService, JwtAuthGuard, OptionalJwtAuthGuard] })
+@Module({
+  imports: [AuthModule],
+  controllers: [DictationController],
+  providers: [DictationService],
+})
 export class DictationModule {}

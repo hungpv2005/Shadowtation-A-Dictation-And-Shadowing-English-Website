@@ -1,111 +1,370 @@
-import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash, createHmac, randomBytes } from 'crypto';
+import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
-import { DataSource, IsNull } from 'typeorm';
-import { User } from '../database/entities/user.entity';
+import * as crypto from 'crypto';
+import { MoreThan, Repository } from 'typeorm';
 import { RefreshToken } from '../database/entities/refresh-token.entity';
+import { PasswordResetToken } from '../database/entities/password-reset-token.entity';
+import { User, UserRole } from '../database/entities/user.entity';
+import { AuthResponseDto, UserProfileDto } from './dto/auth-response.dto';
+import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly dataSource: DataSource, private readonly config: ConfigService) {}
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(RefreshToken)
+    private readonly refreshTokenRepository: Repository<RefreshToken>,
+    @InjectRepository(PasswordResetToken)
+    private readonly passwordResetTokenRepository: Repository<PasswordResetToken>,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
 
-  async login(input: { email?: unknown; password?: unknown }) {
-    const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
-    const password = typeof input.password === 'string' ? input.password : '';
-    if (!email || email.length > 150 || !password || password.length > 200) {
-      throw new UnauthorizedException('Email hoặc mật khẩu không chính xác.');
-    }
-
-    const user = await this.dataSource.getRepository(User).findOneBy({ email });
-    if (!user || !user.isActive || !(await bcrypt.compare(password, user.passwordHash))) {
-      throw new UnauthorizedException('Email hoặc mật khẩu không chính xác.');
-    }
-
-    const refreshToken = await this.issueRefreshToken(user.id);
-    return { ...this.createAccessToken(user), refreshToken, user: this.publicUser(user) };
+  private hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 
-  async refresh(input: { refreshToken?: unknown }) {
-    const rawToken = typeof input.refreshToken === 'string' ? input.refreshToken : '';
-    if (!rawToken || rawToken.length > 255) throw new UnauthorizedException('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-    const tokenHash = this.hashToken(rawToken);
+  private sanitizeUser(user: User): UserProfileDto {
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      role: user.role,
+      streakCount: user.streakCount,
+      premiumExpiredAt: user.premiumExpiredAt,
+    };
+  }
 
-    const user = await this.dataSource.transaction(async (manager) => {
-      const repository = manager.getRepository(RefreshToken);
-      const stored = await repository.findOne({
-        where: { tokenHash },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!stored || stored.revokedAt || stored.expiresAt.getTime() <= Date.now()) {
-        throw new UnauthorizedException('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-      }
+  private async generateTokens(user: User): Promise<AuthResponseDto> {
+    const payload = { sub: user.id, email: user.email, role: user.role };
 
-      const account = await manager.getRepository(User).findOneBy({ id: stored.userId });
-      if (!account?.isActive) throw new UnauthorizedException('Tài khoản không còn hoạt động.');
+    const accessSecret = this.configService.get<string>('JWT_ACCESS_SECRET') ?? 'default_access_secret';
+    const accessExpiresIn = this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '15m';
 
-      stored.revokedAt = new Date();
-      await repository.save(stored);
-      return account;
+    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET') ?? 'default_refresh_secret';
+    const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+
+    const accessToken = this.jwtService.sign(payload, {
+      secret: accessSecret,
+      expiresIn: accessExpiresIn,
     });
 
-    const nextRefreshToken = await this.issueRefreshToken(user.id);
-    return { ...this.createAccessToken(user), refreshToken: nextRefreshToken };
+    const refreshToken = this.jwtService.sign(payload, {
+      secret: refreshSecret,
+      expiresIn: refreshExpiresIn,
+    });
+
+    // Lưu bản băm token vào DB để kiểm soát thu hồi (Revoke)
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const tokenEntity = this.refreshTokenRepository.create({
+      userId: user.id,
+      tokenHash: this.hashToken(refreshToken),
+      expiresAt,
+    });
+    await this.refreshTokenRepository.save(tokenEntity);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: this.sanitizeUser(user),
+    };
   }
 
-  async logout(input: { refreshToken?: unknown }) {
-    const rawToken = typeof input.refreshToken === 'string' ? input.refreshToken : '';
-    if (rawToken && rawToken.length <= 255) {
-      await this.dataSource.getRepository(RefreshToken).update(
-        { tokenHash: this.hashToken(rawToken), revokedAt: IsNull() },
+  async register(dto: RegisterDto): Promise<AuthResponseDto> {
+    const email = dto.email.trim().toLowerCase();
+    const existing = await this.userRepository.findOne({ where: { email } });
+    if (existing) {
+      throw new ConflictException('Email này đã được sử dụng');
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(dto.password, salt);
+
+    const newUser = this.userRepository.create({
+      email,
+      fullName: dto.fullName.trim(),
+      passwordHash,
+      role: UserRole.STUDENT,
+      isActive: true,
+      streakCount: 0,
+    });
+
+    const savedUser = await this.userRepository.save(newUser);
+    return this.generateTokens(savedUser);
+  }
+
+  async login(dto: LoginDto): Promise<AuthResponseDto> {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
+    }
+
+    const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!isMatch) {
+      throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Tài khoản đã bị tạm khóa, vui lòng liên hệ Admin');
+    }
+
+    return this.generateTokens(user);
+  }
+
+  async refresh(refreshToken: string): Promise<AuthResponseDto> {
+    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET') ?? 'default_refresh_secret';
+    let payload: { sub: string };
+
+    try {
+      payload = this.jwtService.verify(refreshToken, { secret: refreshSecret });
+    } catch {
+      throw new UnauthorizedException('Refresh token không hợp lệ hoặc đã hết hạn');
+    }
+
+    const tokenHash = this.hashToken(refreshToken);
+    const tokenRecord = await this.refreshTokenRepository.findOne({
+      where: {
+        tokenHash,
+        expiresAt: MoreThan(new Date()),
+      },
+    });
+
+    if (!tokenRecord || tokenRecord.revokedAt) {
+      throw new UnauthorizedException('Refresh token không hợp lệ hoặc đã bị thu hồi');
+    }
+
+    // Thu hồi token cũ (Token Rotation)
+    tokenRecord.revokedAt = new Date();
+    await this.refreshTokenRepository.save(tokenRecord);
+
+    const user = await this.userRepository.findOne({ where: { id: payload.sub } });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Người dùng không còn khả dụng');
+    }
+
+    return this.generateTokens(user);
+  }
+
+  async logout(userId: string, refreshToken?: string): Promise<{ success: boolean; message: string }> {
+    if (refreshToken) {
+      const tokenHash = this.hashToken(refreshToken);
+      await this.refreshTokenRepository.update(
+        { userId, tokenHash },
+        { revokedAt: new Date() },
+      );
+    } else {
+      // Thu hồi tất cả refresh token của user
+      await this.refreshTokenRepository.update(
+        { userId, revokedAt: undefined },
         { revokedAt: new Date() },
       );
     }
-    return { ok: true };
+
+    return { success: true, message: 'Đăng xuất thành công' };
   }
 
-  private createAccessToken(user: User) {
-    const secret = this.config.get<string>('JWT_ACCESS_SECRET');
-    if (!secret || secret.length < 32) {
-      throw new ServiceUnavailableException('Backend chưa được cấu hình JWT_ACCESS_SECRET tối thiểu 32 ký tự.');
+  async getMe(userId: string): Promise<UserProfileDto> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy thông tin người dùng');
     }
-    const expiresIn = this.readExpiry(this.config.get<string>('JWT_ACCESS_EXPIRES_IN', '15m'));
-    const now = Math.floor(Date.now() / 1000);
-    const header = this.encode({ alg: 'HS256', typ: 'JWT' });
-    const payload = this.encode({ sub: user.id, email: user.email, role: user.role, iat: now, exp: now + expiresIn });
-    const unsigned = `${header}.${payload}`;
-    const signature = createHmac('sha256', secret).update(unsigned).digest('base64url');
-    return { accessToken: `${unsigned}.${signature}`, tokenType: 'Bearer', expiresIn };
+    return this.sanitizeUser(user);
   }
 
-  private publicUser(user: User) {
-    return { id: user.id, email: user.email, fullName: user.fullName, role: user.role };
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ success: boolean; message: string }> {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy tài khoản với email này. Vui lòng kiểm tra lại.');
+    }
+
+    if (!user.isActive) {
+      throw new BadRequestException('Tài khoản này hiện đang bị tạm khóa. Vui lòng liên hệ Admin.');
+    }
+
+    if (!dto.newPassword || dto.newPassword.length < 6) {
+      throw new BadRequestException('Mật khẩu mới phải có ít nhất 6 ký tự.');
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(dto.newPassword, salt);
+
+    user.passwordHash = passwordHash;
+    await this.userRepository.save(user);
+
+    // Thu hồi các refresh token cũ để bảo vệ an toàn cho tài khoản
+    await this.refreshTokenRepository.update(
+      { userId: user.id, revokedAt: undefined },
+      { revokedAt: new Date() },
+    );
+
+    return {
+      success: true,
+      message: 'Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay bằng mật khẩu mới.',
+    };
   }
 
-  private async issueRefreshToken(userId: string) {
-    const token = randomBytes(48).toString('base64url');
-    const expiresIn = this.readExpiry(this.config.get<string>('JWT_REFRESH_EXPIRES_IN', '30d'));
-    await this.dataSource.getRepository(RefreshToken).save({
-      userId,
-      tokenHash: this.hashToken(token),
-      expiresAt: new Date(Date.now() + expiresIn * 1000),
-      revokedAt: null,
+  async resetPassword(dto: ResetPasswordDto): Promise<{ success: boolean; message: string }> {
+    const tokenHash = this.hashToken(dto.token.trim());
+
+    const tokenRecord = await this.passwordResetTokenRepository.findOne({
+      where: {
+        tokenHash,
+        expiresAt: MoreThan(new Date()),
+      },
     });
-    return token;
+
+    if (!tokenRecord || tokenRecord.usedAt) {
+      throw new BadRequestException('Mã liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: tokenRecord.userId } });
+    if (!user || !user.isActive) {
+      throw new BadRequestException('Tài khoản người dùng không hợp lệ hoặc đã bị khóa.');
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(dto.newPassword, salt);
+
+    user.passwordHash = passwordHash;
+    await this.userRepository.save(user);
+
+    tokenRecord.usedAt = new Date();
+    await this.passwordResetTokenRepository.save(tokenRecord);
+
+    // Thu hồi các phiên đăng nhập cũ để đảm bảo an toàn sau khi đổi mật khẩu
+    await this.refreshTokenRepository.update(
+      { userId: user.id, revokedAt: undefined },
+      { revokedAt: new Date() },
+    );
+
+    return {
+      success: true,
+      message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập với mật khẩu mới.',
+    };
   }
 
-  private hashToken(token: string) {
-    return createHash('sha256').update(token).digest('hex');
+  getGoogleAuthUrl(): string {
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+    if (!clientId) {
+      throw new BadRequestException('Chưa cấu hình GOOGLE_CLIENT_ID trong biến môi trường (.env).');
+    }
+    const backendUrl = this.configService.get<string>('BACKEND_URL', 'http://localhost:4000');
+    const callbackUrl =
+      this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
+      `${backendUrl}/api/v1/auth/google/callback`;
+
+    const rootUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
+    const options = {
+      redirect_uri: callbackUrl,
+      client_id: clientId,
+      access_type: 'offline',
+      response_type: 'code',
+      prompt: 'select_account',
+      scope: [
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'https://www.googleapis.com/auth/userinfo.email',
+      ].join(' '),
+    };
+
+    const qs = new URLSearchParams(options);
+    return `${rootUrl}?${qs.toString()}`;
   }
 
-  private encode(value: unknown) {
-    return Buffer.from(JSON.stringify(value)).toString('base64url');
-  }
+  async handleGoogleCallback(code: string): Promise<AuthResponseDto> {
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+    const clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET');
+    if (!clientId || !clientSecret) {
+      throw new BadRequestException('Thiếu cấu hình GOOGLE_CLIENT_ID hoặc GOOGLE_CLIENT_SECRET trong .env.');
+    }
 
-  private readExpiry(value: string) {
-    const match = /^([1-9]\d*)(s|m|h|d)$/.exec(value.trim());
-    if (!match) return 15 * 60;
-    const multipliers: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
-    return Math.min(Number(match[1]) * multipliers[match[2]], 365 * 86400);
+    const backendUrl = this.configService.get<string>('BACKEND_URL', 'http://localhost:4000');
+    const callbackUrl =
+      this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
+      `${backendUrl}/api/v1/auth/google/callback`;
+
+    // 1. Gửi request đổi auth code lấy access_token từ Google
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: callbackUrl,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!tokenRes.ok) {
+      const errBody = await tokenRes.text();
+      throw new BadRequestException(`Xác thực Google thất bại: ${errBody}`);
+    }
+
+    const tokenData = (await tokenRes.json()) as { access_token: string };
+    const accessToken = tokenData.access_token;
+
+    // 2. Lấy thông tin user profile từ Google
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!userRes.ok) {
+      throw new BadRequestException('Không thể lấy thông tin tài khoản từ Google.');
+    }
+
+    const googleUser = (await userRes.json()) as {
+      email: string;
+      name?: string;
+      picture?: string;
+      sub: string;
+    };
+
+    const email = googleUser.email.trim().toLowerCase();
+
+    // 3. Tìm hoặc tự động tạo User học viên mới
+    let user = await this.userRepository.findOne({ where: { email } });
+    if (!user) {
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(crypto.randomUUID(), salt);
+      user = this.userRepository.create({
+        email,
+        fullName: googleUser.name || email.split('@')[0],
+        avatarUrl: googleUser.picture || null,
+        passwordHash,
+        role: UserRole.STUDENT,
+        isActive: true,
+      });
+      await this.userRepository.save(user);
+    } else {
+      if (!user.isActive) {
+        throw new BadRequestException('Tài khoản đã bị tạm khóa. Vui lòng liên hệ quản trị viên.');
+      }
+      if (!user.avatarUrl && googleUser.picture) {
+        user.avatarUrl = googleUser.picture;
+        await this.userRepository.save(user);
+      }
+    }
+
+    return this.generateTokens(user);
   }
 }

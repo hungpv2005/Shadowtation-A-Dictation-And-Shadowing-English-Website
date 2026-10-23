@@ -9,3 +9,4 @@ export * from './streak-log.entity';
 export * from './review-list.entity';
 export * from './system-config.entity';
 export * from './refresh-token.entity';
+export * from './password-reset-token.entity';

@@ -4,13 +4,24 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
+import { ThrottlerModule, seconds } from '@nestjs/throttler';
 import { SpeechModule } from './speech/speech.module';
 import { DictationModule } from './practice/dictation/dictation.module';
 import { AuthModule } from './auth/auth.module';
+import { SubscriptionModule } from './subscription/subscription.module';
+import { LessonModule } from './lesson/lesson.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../.env'] }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: seconds(60),
+        limit: 100,
+      },
+    ]),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -32,6 +43,9 @@ import { AuthModule } from './auth/auth.module';
     SpeechModule,
     DictationModule,
     AuthModule,
+    SubscriptionModule,
+    LessonModule,
+    PaymentModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
