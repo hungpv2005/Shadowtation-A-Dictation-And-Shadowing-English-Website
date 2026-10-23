@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, X } from 'lucide-react';
+import { Plus, Search, X } from 'lucide-react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { compareDictation, hintPenalty, maskedHint, type DictationScore } from '@/lib/dictation';
 import { MediaDictationPlayer } from './media-dictation-player';
+import { ShadowingPractice } from './shadowing-practice';
+import { clearShadowingRecordings } from './shadowing-recordings';
 
 type Lesson = { id: string; title: string; level: string; audioUrl?: string | null; mediaType?: 'AUDIO' | 'VIDEO' | 'PODCAST'; sourceName?: string | null; sourceUrl?: string | null; durationSeconds?: number | null; isPremiumOnly: boolean; access: 'AVAILABLE' | 'LOCKED'; sentenceCount: number };
 type Sentence = { id: string; startTime: number; endTime: number; textContent: string; wordsJson: { word: string; start: number; end: number }[] };
@@ -17,13 +19,22 @@ type LessonDraft = {
   scores: Record<string, DictationScore>; mode: 'FULL' | 'BLANKS'; savedAt: string;
   isCompleted?: boolean; totalScore?: number | null;
 };
-type RecentLesson = { lessonId: string; lastOpenedAt: string; status: 'IN_PROGRESS' | 'COMPLETED' };
+type PracticeMode = 'DICTATION' | 'SHADOWING';
+type ShadowingSource = 'OPENAI' | 'MOCK' | 'LEGACY';
+type ShadowingDraft = { lessonId: string; current: number; scores: Record<string, number>; sources?: Record<string, ShadowingSource>; savedAt: string; isCompleted?: boolean; totalScore?: number | null };
+type RecentLesson = { lessonId: string; lastOpenedAt: string; status: 'IN_PROGRESS' | 'COMPLETED'; mode?: PracticeMode };
+type LibraryProgress = { lessonId: string; mode: PracticeMode; lastOpenedAt: string; completedCount: number; isCompleted: boolean; hasDraft?: boolean; totalScore?: number | null };
+type RecentLibraryLesson = { lesson: Lesson; progressByMode: Partial<Record<PracticeMode, LibraryProgress>>; latestProgress: LibraryProgress };
+type ResumeSelection = { lesson: Lesson; fromLibrary: boolean; progress: LibraryProgress };
 
 const DRAFT_KEY = 'shadowtation.dictation.draft';
 const PENDING_KEY = 'shadowtation.dictation.pending';
 const FAVORITES_KEY = 'shadowtation.dictation.favorites';
 const RECENT_KEY = 'shadowtation.dictation.recent';
+const SHADOWING_DRAFT_KEY = 'shadowtation.shadowing.draft';
 const lessonDraftKey = (lessonId: string) => `${DRAFT_KEY}:${lessonId}`;
+const shadowingDraftKey = (lessonId: string) => `${SHADOWING_DRAFT_KEY}:${lessonId}`;
+const shadowingAttemptsKey = (lessonId: string) => `shadowtation.shadowing.attempts:${lessonId}`;
 function readLessonDraft(lessonId: string): LessonDraft | null {
   try {
     const raw = localStorage.getItem(lessonDraftKey(lessonId));
@@ -57,6 +68,28 @@ function readLessonDrafts(): LessonDraft[] {
   } catch { return drafts; }
   return drafts.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 }
+function readShadowingDraft(lessonId: string): ShadowingDraft | null {
+  try {
+    const raw = localStorage.getItem(shadowingDraftKey(lessonId));
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as Partial<ShadowingDraft>;
+    if (draft.lessonId !== lessonId || !Number.isFinite(draft.current) || !draft.scores) return null;
+    return { lessonId, current: draft.current!, scores: draft.scores, sources: draft.sources ?? {}, savedAt: draft.savedAt ?? new Date(0).toISOString(), isCompleted: draft.isCompleted === true, totalScore: Number.isFinite(draft.totalScore) ? draft.totalScore! : null };
+  } catch { return null; }
+}
+function readShadowingDrafts(): ShadowingDraft[] {
+  const drafts: ShadowingDraft[] = [];
+  const prefix = `${SHADOWING_DRAFT_KEY}:`;
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(prefix)) continue;
+      const draft = readShadowingDraft(key.slice(prefix.length));
+      if (draft) drafts.push(draft);
+    }
+  } catch { return drafts; }
+  return drafts.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
 function readRecentLessons(): RecentLesson[] {
   try {
     const value = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as RecentLesson[];
@@ -72,14 +105,18 @@ export default function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedLessonId = searchParams.get('lesson');
+  const sentenceToOpenId = searchParams.get('sentence');
+  const [practiceMode, setPracticeMode] = useState<PracticeMode>(searchParams.get('mode') === 'shadowing' ? 'SHADOWING' : 'DICTATION');
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [savedDrafts, setSavedDrafts] = useState<LessonDraft[]>([]);
+  const [savedShadowingDrafts, setSavedShadowingDrafts] = useState<ShadowingDraft[]>([]);
   const [recentLessons, setRecentLessons] = useState<RecentLesson[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('ALL');
   const [mediaFilter, setMediaFilter] = useState('ALL');
   const [showFavorites, setShowFavorites] = useState(false);
+  const [libraryView, setLibraryView] = useState<'AVAILABLE' | 'RECENT' | 'CUSTOM'>('AVAILABLE');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [captionsVtt, setCaptionsVtt] = useState('');
   const [useYoutubeCaptions, setUseYoutubeCaptions] = useState(true);
@@ -92,7 +129,8 @@ export default function Home() {
   const [loginPrompt, setLoginPrompt] = useState(false);
   const [sentences, setSentences] = useState<Sentence[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [current, setCurrent] = useState(0);
+  const [dictationCurrent, setDictationCurrent] = useState(0);
+  const [shadowingCurrent, setShadowingCurrent] = useState(0);
   const [mode, setMode] = useState<'FULL' | 'BLANKS'>('FULL');
   const [hintLevel, setHintLevel] = useState(0);
   const [hintCounts, setHintCounts] = useState<Record<string, number>>({});
@@ -100,6 +138,12 @@ export default function Home() {
   const [transcriptOn, setTranscriptOn] = useState(false);
   const [transcriptUsed, setTranscriptUsed] = useState<Record<string, boolean>>({});
   const [scores, setScores] = useState<Record<string, DictationScore>>({});
+  const [dictationStarted, setDictationStarted] = useState(false);
+  const [shadowingScores, setShadowingScores] = useState<Record<string, number>>({});
+  const [shadowingSources, setShadowingSources] = useState<Record<string, ShadowingSource>>({});
+  const [shadowingLessonCompleted, setShadowingLessonCompleted] = useState(false);
+  const [shadowingStarted, setShadowingStarted] = useState(false);
+  const [mediaTime, setMediaTime] = useState(0);
   const [hasCompleted, setHasCompleted] = useState(false);
   const [completionScore, setCompletionScore] = useState<number | null>(null);
   const [completionSyncPending, setCompletionSyncPending] = useState(false);
@@ -109,14 +153,52 @@ export default function Home() {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
   const [finished, setFinished] = useState(false);
-  const [resumeSelection, setResumeSelection] = useState<{ lesson: Lesson; fromLibrary: boolean; draft: LessonDraft } | null>(null);
+  const [resumeSelection, setResumeSelection] = useState<ResumeSelection | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [fillReset, setFillReset] = useState(0);
   const openedFromLibraryRef = useRef(false);
   const isLeavingLessonRef = useRef(false);
   const activeLessonIdRef = useRef<string | null>(null);
   const latestDraftRef = useRef<LessonDraft | null>(null);
-  const beginLessonRef = useRef<(item: Lesson, fromLibrary?: boolean) => void>(() => {});
+  const latestShadowingDraftRef = useRef<ShadowingDraft | null>(null);
+  const practiceModeRef = useRef(practiceMode);
+  const beginLessonRef = useRef<(item: Lesson, fromLibrary?: boolean, promptForProgress?: boolean, requestedMode?: PracticeMode) => void>(() => {});
+  practiceModeRef.current = practiceMode;
+
+  const current = practiceMode === 'DICTATION' ? dictationCurrent : shadowingCurrent;
+  function setCurrent(index: number) {
+    if (practiceMode === 'DICTATION') setDictationCurrent(index);
+    else setShadowingCurrent(index);
+  }
+
+  useEffect(() => {
+    const requestedMode = searchParams.get('mode') === 'shadowing' ? 'SHADOWING' : 'DICTATION';
+    if (lesson && selectedLessonId !== lesson.id) {
+      const lockedMode = practiceModeRef.current;
+      if (!selectedLessonId) {
+        persistLatestDraft();
+        openedFromLibraryRef.current = false;
+        isLeavingLessonRef.current = true;
+        activeLessonIdRef.current = null;
+        clearActiveLesson();
+        setLibraryView('AVAILABLE');
+        setPracticeMode(lockedMode);
+        router.replace(`/practice/dictation?mode=${lockedMode.toLowerCase()}`, { scroll: false });
+        window.dispatchEvent(new Event('shadowtation:practice-mode'));
+      } else {
+        router.replace(`/practice/dictation?lesson=${encodeURIComponent(lesson.id)}&mode=${lockedMode.toLowerCase()}`, { scroll: false });
+      }
+      return;
+    }
+    if (lesson) {
+      if (requestedMode !== practiceModeRef.current) {
+        router.replace(`/practice/dictation?lesson=${encodeURIComponent(lesson.id)}&mode=${practiceModeRef.current.toLowerCase()}`, { scroll: false });
+      } else window.dispatchEvent(new Event('shadowtation:practice-mode'));
+      return;
+    }
+    setPracticeMode(requestedMode);
+    window.dispatchEvent(new Event('shadowtation:practice-mode'));
+  }, [searchParams, selectedLessonId, router]);
 
   useEffect(() => {
     return () => { activeLessonIdRef.current = null; };
@@ -125,6 +207,7 @@ export default function Home() {
   useEffect(() => {
     try { setFavorites(JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? '[]')); } catch { localStorage.removeItem(FAVORITES_KEY); }
     setSavedDrafts(readLessonDrafts());
+    setSavedShadowingDrafts(readShadowingDrafts());
     setRecentLessons(readRecentLessons());
     apiFetch<{ items: Lesson[] }>('/practice/dictation/lessons')
       .then((data) => setLessons(data.items))
@@ -137,64 +220,78 @@ export default function Home() {
     const selected = lessons.find((item) => item.id === selectedLessonId);
     if (!selected) return;
     if (selected.access === 'LOCKED') setLockedLesson(selected);
-    else beginLessonRef.current(selected, false);
-  }, [lessons, lesson, selectedLessonId, resumeSelection]);
+    else beginLessonRef.current(selected, false, false, searchParams.get('mode') === 'shadowing' ? 'SHADOWING' : 'DICTATION');
+  }, [lessons, lesson, selectedLessonId, resumeSelection, searchParams]);
 
-  function beginLesson(item: Lesson, fromLibrary = true) {
+  function progressFor(lessonId: string, requestedMode: PracticeMode): LibraryProgress | null {
+    if (requestedMode === 'DICTATION') {
+      const draft = readLessonDraft(lessonId);
+      return draft ? { lessonId, mode: requestedMode, lastOpenedAt: draft.savedAt, completedCount: Object.keys(draft.scores).length, isCompleted: Boolean(draft.isCompleted), hasDraft: true, totalScore: draft.totalScore } : null;
+    }
+    const draft = readShadowingDraft(lessonId);
+    return draft ? { lessonId, mode: requestedMode, lastOpenedAt: draft.savedAt, completedCount: Object.keys(draft.scores).length, isCompleted: Boolean(draft.isCompleted), hasDraft: true, totalScore: draft.totalScore } : null;
+  }
+
+  function beginLesson(item: Lesson, fromLibrary = true, promptForProgress = false, requestedMode = practiceMode) {
     if (!hasLoginToken()) { setLoginPrompt(true); return; }
     if (item.access === 'LOCKED') { setLockedLesson(item); return; }
-    const savedDraft = readLessonDraft(item.id);
-    if (savedDraft) {
-      setResumeSelection({ lesson: item, fromLibrary, draft: savedDraft });
+    const savedProgress = promptForProgress ? progressFor(item.id, requestedMode) : null;
+    if (savedProgress) {
+      if (requestedMode !== practiceMode) {
+        setPracticeMode(requestedMode);
+        router.replace(`/practice/dictation?mode=${requestedMode.toLowerCase()}`, { scroll: false });
+        window.dispatchEvent(new Event('shadowtation:practice-mode'));
+      }
+      setResumeSelection({ lesson: item, fromLibrary, progress: savedProgress });
       return;
     }
-    startLesson(item, fromLibrary);
+    startLesson(item, fromLibrary, requestedMode);
   }
 
   function resumeSavedLesson() {
     if (!resumeSelection) return;
-    const { lesson: selected, fromLibrary } = resumeSelection;
+    const { lesson: selected, fromLibrary, progress } = resumeSelection;
     setResumeSelection(null);
-    startLesson(selected, fromLibrary);
+    startLesson(selected, fromLibrary, progress.mode);
   }
 
-  function restartSavedLesson() {
+  async function restartSavedLesson() {
     if (!resumeSelection) return;
-    const { lesson: selected, fromLibrary } = resumeSelection;
-    localStorage.removeItem(lessonDraftKey(selected.id));
-    const pendingRaw = localStorage.getItem(PENDING_KEY);
-    if (pendingRaw) {
-      try {
-        const pending = JSON.parse(pendingRaw) as { lessonId?: string };
-        if (pending.lessonId === selected.id) localStorage.removeItem(PENDING_KEY);
-      } catch { localStorage.removeItem(PENDING_KEY); }
+    const { lesson: selected, fromLibrary, progress } = resumeSelection;
+    if (progress.mode === 'SHADOWING') {
+      try { await clearShadowingRecordings(selected.id); }
+      catch { setError('Không xóa được các bản ghi cũ trên thiết bị.'); return; }
     }
-    const legacyRaw = localStorage.getItem(DRAFT_KEY);
-    if (legacyRaw) {
-      try {
-        const legacy = JSON.parse(legacyRaw) as { lessonId?: string };
-        if (legacy.lessonId === selected.id) localStorage.removeItem(DRAFT_KEY);
-      } catch { localStorage.removeItem(DRAFT_KEY); }
-    }
+    clearModeProgress(selected.id, progress.mode);
     setSavedDrafts(readLessonDrafts());
+    setSavedShadowingDrafts(readShadowingDrafts());
     setResumeSelection(null);
-    startLesson(selected, fromLibrary);
+    startLesson(selected, fromLibrary, progress.mode);
   }
 
-  function startLesson(item: Lesson, fromLibrary: boolean) {
+  function startLesson(item: Lesson, fromLibrary: boolean, requestedMode = practiceMode) {
     openedFromLibraryRef.current = fromLibrary;
     isLeavingLessonRef.current = false;
     activeLessonIdRef.current = item.id;
-    if (fromLibrary) router.push(`/practice/dictation?lesson=${encodeURIComponent(item.id)}`);
+    latestDraftRef.current = null;
+    latestShadowingDraftRef.current = null;
+    setPracticeMode(requestedMode);
+    if (fromLibrary) router.push(`/practice/dictation?lesson=${encodeURIComponent(item.id)}&mode=${requestedMode.toLowerCase()}`);
     setDraftReady(false);
     setSentences([]);
     setAnswers({});
-    setCurrent(0);
+    setDictationCurrent(0);
+    setShadowingCurrent(0);
     setHintLevel(0);
     setHintCounts({});
     setTranscriptOn(false);
     setTranscriptUsed({});
     setScores({});
+    setDictationStarted(requestedMode === 'DICTATION');
+    setShadowingScores({});
+    setShadowingSources({});
+    setShadowingLessonCompleted(false);
+    setShadowingStarted(requestedMode === 'SHADOWING');
     setHasCompleted(false);
     setCompletionScore(null);
     setCompletionSyncPending(false);
@@ -202,13 +299,21 @@ export default function Home() {
     setFinished(false);
     setLesson(item);
     setError('');
-    setRecentLesson(item.id, 'IN_PROGRESS');
+    setRecentLesson(item.id, 'IN_PROGRESS', requestedMode);
+  }
+
+  function changePracticeMode(nextMode: PracticeMode) {
+    if (lesson || nextMode === practiceMode) return;
+    setError('');
+    setPracticeMode(nextMode);
+    router.replace(`/practice/dictation?mode=${nextMode.toLowerCase()}`, { scroll: false });
+    window.dispatchEvent(new Event('shadowtation:practice-mode'));
   }
 
   beginLessonRef.current = beginLesson;
 
-  function setRecentLesson(lessonId: string, status: RecentLesson['status']) {
-    const next: RecentLesson[] = [{ lessonId, lastOpenedAt: new Date().toISOString(), status }, ...readRecentLessons().filter((item) => item.lessonId !== lessonId)].slice(0, 12);
+  function setRecentLesson(lessonId: string, status: RecentLesson['status'], requestedMode = practiceMode) {
+    const next: RecentLesson[] = [{ lessonId, mode: requestedMode, lastOpenedAt: new Date().toISOString(), status }, ...readRecentLessons().filter((item) => item.lessonId !== lessonId || (item.mode ?? 'DICTATION') !== requestedMode)].slice(0, 24);
     try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* Keep the active lesson usable if storage is full. */ }
     setRecentLessons(next);
   }
@@ -238,9 +343,10 @@ export default function Home() {
         }
         const saved = readLessonDraft(lesson.id);
         if (saved) {
+          setDictationStarted(true);
           const savedCurrent = Math.min(saved.current, Math.max(0, data.sentences.length - 1));
           setAnswers(saved.answers);
-          setCurrent(savedCurrent);
+          setDictationCurrent(savedCurrent);
           setHintCounts(saved.hintCounts);
           setTranscriptUsed(saved.transcriptUsed);
           setScores(saved.scores);
@@ -253,6 +359,20 @@ export default function Home() {
               : null);
           setHintLevel(saved.hintCounts[data.sentences[savedCurrent]?.id] ?? 0);
         }
+        const shadowingSaved = readShadowingDraft(lesson.id);
+        if (shadowingSaved) {
+          setShadowingCurrent(Math.min(shadowingSaved.current, Math.max(0, data.sentences.length - 1)));
+          setShadowingScores(shadowingSaved.scores);
+          setShadowingSources(shadowingSaved.sources ?? {});
+          setShadowingLessonCompleted(shadowingSaved.isCompleted === true);
+          setShadowingStarted(true);
+        }
+        if (sentenceToOpenId && practiceModeRef.current === 'SHADOWING') {
+          const targetIndex = data.sentences.findIndex((item) => item.id === sentenceToOpenId);
+          if (targetIndex >= 0) setShadowingCurrent(targetIndex);
+        }
+        setSavedDrafts(readLessonDrafts());
+        setSavedShadowingDrafts(readShadowingDrafts());
         setDraftReady(true);
       })
       .catch((e: Error) => {
@@ -263,13 +383,13 @@ export default function Home() {
           activeLessonIdRef.current = null;
           setLesson(null);
           setLoginPrompt(true);
-          router.replace('/practice/dictation');
+          router.replace(`/practice/dictation?mode=${practiceModeRef.current.toLowerCase()}`);
           return;
         }
         setError(e.message || 'Không tải được nội dung bài.');
       });
     return () => { cancelled = true; };
-  }, [lesson, router]);
+  }, [lesson, router, sentenceToOpenId]);
 
   useEffect(() => {
     if (!lesson) return;
@@ -317,7 +437,7 @@ export default function Home() {
         localStorage.removeItem(PENDING_KEY);
         localStorage.setItem(lessonDraftKey(lesson.id), JSON.stringify(completedDraft));
         setSavedDrafts(readLessonDrafts());
-        setRecentLesson(lesson.id, 'COMPLETED');
+        setRecentLesson(lesson.id, 'COMPLETED', 'DICTATION');
         if (!isLeavingLessonRef.current && activeLessonIdRef.current === lesson.id) {
           latestDraftRef.current = completedDraft;
           setHasCompleted(true);
@@ -331,19 +451,38 @@ export default function Home() {
     return () => window.removeEventListener('online', syncDraft);
   }, [lesson]);
 
-  const visibleLessons = lessons.filter((item) => (!showFavorites || favorites.includes(item.id)) && (levelFilter === 'ALL' || item.level === levelFilter) && (mediaFilter === 'ALL' || (item.mediaType ?? 'AUDIO') === mediaFilter) && item.title.toLowerCase().includes(search.trim().toLowerCase()));
   const recentLibraryItems = useMemo(() => {
-    const recentById = new Map<string, RecentLesson>();
-    recentLessons.forEach((item) => recentById.set(item.lessonId, item));
-    savedDrafts.forEach((draft) => recentById.set(draft.lessonId, { lessonId: draft.lessonId, lastOpenedAt: draft.savedAt, status: draft.isCompleted ? 'COMPLETED' : 'IN_PROGRESS' }));
-    return Array.from(recentById.values())
+    const progressByMode = new Map<string, LibraryProgress>();
+    recentLessons.forEach((recent) => {
+      const mode = recent.mode ?? 'DICTATION';
+      progressByMode.set(`${recent.lessonId}:${mode}`, { lessonId: recent.lessonId, mode, lastOpenedAt: recent.lastOpenedAt, completedCount: 0, isCompleted: recent.status === 'COMPLETED' });
+    });
+    savedDrafts.forEach((draft) => progressByMode.set(`${draft.lessonId}:DICTATION`, { lessonId: draft.lessonId, mode: 'DICTATION', lastOpenedAt: draft.savedAt, completedCount: Object.keys(draft.scores).length, isCompleted: Boolean(draft.isCompleted), hasDraft: true, totalScore: draft.totalScore }));
+    savedShadowingDrafts.forEach((draft) => progressByMode.set(`${draft.lessonId}:SHADOWING`, { lessonId: draft.lessonId, mode: 'SHADOWING', lastOpenedAt: draft.savedAt, completedCount: Object.keys(draft.scores).length, isCompleted: Boolean(draft.isCompleted), hasDraft: true, totalScore: draft.totalScore }));
+    return Array.from(progressByMode.values())
       .sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt))
-      .flatMap((recent) => {
-        const item = lessons.find((candidate) => candidate.id === recent.lessonId);
-        if (!item) return [];
-        return [{ recent, lesson: item, draft: savedDrafts.find((candidate) => candidate.lessonId === item.id) ?? null }];
+      .flatMap((progress) => {
+        const item = lessons.find((candidate) => candidate.id === progress.lessonId);
+        return item ? [{ progress, lesson: item }] : [];
       });
-  }, [lessons, recentLessons, savedDrafts]);
+  }, [lessons, recentLessons, savedDrafts, savedShadowingDrafts]);
+  const recentLibraryLessons = useMemo(() => {
+    const lessonsById = new Map<string, RecentLibraryLesson>();
+    recentLibraryItems.forEach(({ lesson: item, progress }) => {
+      const existing = lessonsById.get(item.id);
+      if (existing) {
+        existing.progressByMode[progress.mode] = progress;
+        if (progress.lastOpenedAt > existing.latestProgress.lastOpenedAt) existing.latestProgress = progress;
+      } else {
+        const progressByMode: Partial<Record<PracticeMode, LibraryProgress>> = {};
+        progressByMode[progress.mode] = progress;
+        lessonsById.set(item.id, { lesson: item, progressByMode, latestProgress: progress });
+      }
+    });
+    return Array.from(lessonsById.values()).sort((a, b) => b.latestProgress.lastOpenedAt.localeCompare(a.latestProgress.lastOpenedAt));
+  }, [recentLibraryItems]);
+  const recentLessonIds = new Set(recentLibraryLessons.map(({ lesson: item }) => item.id));
+  const visibleLessons = lessons.filter((item) => !recentLessonIds.has(item.id) && (!showFavorites || favorites.includes(item.id)) && (levelFilter === 'ALL' || item.level === levelFilter) && (mediaFilter === 'ALL' || (item.mediaType ?? 'AUDIO') === mediaFilter) && item.title.toLowerCase().includes(search.trim().toLowerCase()));
   const isYoutubeSource = customMediaType === 'VIDEO' && Boolean(youtubeId(youtubeUrl));
   function toggleFavorite(id: string) { setFavorites((old) => { const next = old.includes(id) ? old.filter((value) => value !== id) : [...old, id]; localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); return next; }); }
   async function createCustomLesson() {
@@ -375,19 +514,89 @@ export default function Home() {
   }
 
   const sentence = sentences[current];
+  const shadowingSentence = sentences[shadowingCurrent];
   const answer = sentence ? (answers[sentence.id] ?? '') : '';
+  useEffect(() => { setMediaTime(sentence?.startTime ?? 0); }, [sentence?.id, sentence?.startTime]);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedAnswer(answer), 150);
     return () => window.clearTimeout(timer);
   }, [answer, sentence?.id]);
   const liveScore = useMemo(() => sentence?.textContent?.trim() ? compareDictation(sentence.textContent, debouncedAnswer) : null, [sentence, debouncedAnswer]);
-  const completedCount = Object.keys(scores).length;
-  const average = completedCount ? Math.round(Object.values(scores).reduce((sum, score) => sum + score.accuracy, 0) / completedCount) : 0;
-  const activeDraft = useMemo<LessonDraft | null>(() => lesson && sentences.length && draftReady && !finished ? {
-    lessonId: lesson.id, answers, current, hintCounts, transcriptUsed, scores, mode, savedAt: new Date().toISOString(),
+  const completedCount = practiceMode === 'SHADOWING' ? Object.keys(shadowingScores).length : Object.keys(scores).length;
+  const average = practiceMode === 'SHADOWING'
+    ? (completedCount ? Math.round(Object.values(shadowingScores).reduce((sum, score) => sum + score, 0) / completedCount) : 0)
+    : (completedCount ? Math.round(Object.values(scores).reduce((sum, score) => sum + score.accuracy, 0) / completedCount) : 0);
+  const shadowingComplete = sentences.length > 0 && sentences.every((item) => shadowingScores[item.id] !== undefined);
+  const shadowingRemaining = Math.max(0, sentences.length - Object.keys(shadowingScores).length);
+  const karaokeWordIndex = sentence ? (() => {
+    const timedIndex = sentence.wordsJson.findIndex((word) => mediaTime >= word.start && mediaTime < word.end);
+    if (timedIndex >= 0) return timedIndex;
+    const wordCount = sentence.textContent.trim().split(/\s+/).filter(Boolean).length;
+    const duration = sentence.endTime - sentence.startTime;
+    return wordCount && duration > 0 ? Math.min(wordCount - 1, Math.max(0, Math.floor((mediaTime - sentence.startTime) / duration * wordCount))) : -1;
+  })() : -1;
+  function onShadowingCompleted(sentenceId: string, score: number, source: ShadowingSource) {
+    const nextScores = { ...shadowingScores, [sentenceId]: score };
+    const nextSources = { ...shadowingSources, [sentenceId]: source };
+    setShadowingScores(nextScores);
+    setShadowingSources(nextSources);
+    if (!lesson) return;
+    const draft: ShadowingDraft = { lessonId: lesson.id, current: shadowingCurrent, scores: nextScores, sources: nextSources, savedAt: new Date().toISOString(), isCompleted: false, totalScore: null };
+    try { localStorage.setItem(shadowingDraftKey(lesson.id), JSON.stringify(draft)); } catch { setError('Không thể tự lưu tiến trình Shadowing trên thiết bị này.'); }
+    setSavedShadowingDrafts(readShadowingDrafts());
+    setRecentLesson(lesson.id, 'IN_PROGRESS', 'SHADOWING');
+  }
+
+  function onShadowingScoreReset(sentenceId: string) {
+    if (!lesson || shadowingScores[sentenceId] === undefined) return;
+    setError('');
+    const nextScores = { ...shadowingScores };
+    const nextSources = { ...shadowingSources };
+    delete nextScores[sentenceId];
+    delete nextSources[sentenceId];
+    setShadowingScores(nextScores);
+    setShadowingSources(nextSources);
+    setShadowingLessonCompleted(false);
+    const draft: ShadowingDraft = { lessonId: lesson.id, current: shadowingCurrent, scores: nextScores, sources: nextSources, savedAt: new Date().toISOString(), isCompleted: false, totalScore: null };
+    latestShadowingDraftRef.current = draft;
+    try { localStorage.setItem(shadowingDraftKey(lesson.id), JSON.stringify(draft)); }
+    catch { setError('Không thể tự lưu tiến trình Shadowing trên thiết bị này.'); }
+    setSavedShadowingDrafts(readShadowingDrafts());
+    setRecentLesson(lesson.id, 'IN_PROGRESS', 'SHADOWING');
+  }
+
+  function finishShadowingLesson() {
+    if (!lesson || !sentences.length) return;
+    setError('');
+    const firstUnscored = sentences.findIndex((item) => shadowingScores[item.id] === undefined);
+    if (firstUnscored >= 0) {
+      setShadowingCurrent(firstUnscored);
+      setError(`Còn ${sentences.filter((item) => shadowingScores[item.id] === undefined).length} câu chưa được chấm. Hãy ghi âm và gửi từng câu trước khi hoàn thành bài.`);
+      return;
+    }
+    const totalScore = Math.round(Object.values(shadowingScores).reduce((sum, value) => sum + value, 0) / sentences.length);
+    const draft: ShadowingDraft = { lessonId: lesson.id, current: shadowingCurrent, scores: shadowingScores, sources: shadowingSources, savedAt: new Date().toISOString(), isCompleted: true, totalScore };
+    setShadowingLessonCompleted(true);
+    latestShadowingDraftRef.current = draft;
+    try { localStorage.setItem(shadowingDraftKey(lesson.id), JSON.stringify(draft)); }
+    catch { setError('Không thể tự lưu điểm tổng Shadowing trên thiết bị này.'); }
+    setSavedShadowingDrafts(readShadowingDrafts());
+    setRecentLesson(lesson.id, 'COMPLETED', 'SHADOWING');
+    setCompletionScore(totalScore);
+    setCompletionSyncPending(false);
+    setFinished(true);
+  }
+  const activeDraft = useMemo<LessonDraft | null>(() => lesson && sentences.length && draftReady && dictationStarted && !finished ? {
+    lessonId: lesson.id, answers, current: dictationCurrent, hintCounts, transcriptUsed, scores, mode, savedAt: new Date().toISOString(),
     isCompleted: hasCompleted, totalScore: hasCompleted ? completionScore : null,
-  } : null, [lesson, sentences.length, draftReady, finished, answers, current, hintCounts, transcriptUsed, scores, mode, hasCompleted, completionScore]);
+  } : null, [lesson, sentences.length, draftReady, dictationStarted, finished, answers, dictationCurrent, hintCounts, transcriptUsed, scores, mode, hasCompleted, completionScore]);
   latestDraftRef.current = activeDraft;
+  const activeShadowingDraft = useMemo<ShadowingDraft | null>(() => lesson && sentences.length && draftReady && shadowingStarted ? {
+    lessonId: lesson.id, current: shadowingCurrent, scores: shadowingScores, sources: shadowingSources, savedAt: new Date().toISOString(),
+    isCompleted: shadowingLessonCompleted,
+    totalScore: shadowingLessonCompleted ? Math.round(Object.values(shadowingScores).reduce((sum, value) => sum + value, 0) / Math.max(Object.keys(shadowingScores).length, 1)) : null,
+  } : null, [lesson, sentences, draftReady, shadowingStarted, shadowingCurrent, shadowingScores, shadowingSources, shadowingLessonCompleted]);
+  latestShadowingDraftRef.current = activeShadowingDraft;
 
   useEffect(() => {
     if (!activeDraft) return;
@@ -398,10 +607,22 @@ export default function Home() {
   }, [activeDraft]);
 
   useEffect(() => {
+    if (!activeShadowingDraft || practiceMode !== 'SHADOWING') return;
+    try {
+      localStorage.setItem(shadowingDraftKey(activeShadowingDraft.lessonId), JSON.stringify(activeShadowingDraft));
+      setSavedShadowingDrafts(readShadowingDrafts());
+      setRecentLesson(activeShadowingDraft.lessonId, activeShadowingDraft.isCompleted ? 'COMPLETED' : 'IN_PROGRESS', 'SHADOWING');
+    } catch { setError('Không thể tự lưu tiến trình Shadowing trên thiết bị này.'); }
+  }, [activeShadowingDraft, practiceMode]);
+
+  useEffect(() => {
     const persistOnPageExit = () => {
-      const draft = latestDraftRef.current;
-      if (!draft) return;
-      try { localStorage.setItem(lessonDraftKey(draft.lessonId), JSON.stringify(draft)); } catch { /* The regular autosave already reported storage errors. */ }
+      const dictationDraft = latestDraftRef.current;
+      const shadowingDraft = latestShadowingDraftRef.current;
+      try {
+        if (dictationDraft) localStorage.setItem(lessonDraftKey(dictationDraft.lessonId), JSON.stringify(dictationDraft));
+        if (shadowingDraft) localStorage.setItem(shadowingDraftKey(shadowingDraft.lessonId), JSON.stringify(shadowingDraft));
+      } catch { /* The regular autosave already reported storage errors. */ }
     };
     window.addEventListener('pagehide', persistOnPageExit);
     window.addEventListener('beforeunload', persistOnPageExit);
@@ -478,13 +699,13 @@ export default function Home() {
   function persistCompletedResult(totalScore: number) {
     if (!lesson) return;
     const completedDraft: LessonDraft = {
-      lessonId: lesson.id, answers, current, hintCounts, transcriptUsed, scores, mode,
+      lessonId: lesson.id, answers, current: dictationCurrent, hintCounts, transcriptUsed, scores, mode,
       savedAt: new Date().toISOString(), isCompleted: true, totalScore,
     };
     latestDraftRef.current = completedDraft;
     setHasCompleted(true);
     setCompletionScore(totalScore);
-    setRecentLesson(lesson.id, 'COMPLETED');
+    setRecentLesson(lesson.id, 'COMPLETED', 'DICTATION');
     try {
       localStorage.setItem(lessonDraftKey(lesson.id), JSON.stringify(completedDraft));
       setSavedDrafts(readLessonDrafts());
@@ -540,7 +761,7 @@ export default function Home() {
       if (!isLeavingLessonRef.current && activeLessonIdRef.current === submittedLessonId) {
         persistCompletedResult(finalScore);
         setCompletionSyncPending(false);
-        setFinished(true);
+        if (practiceModeRef.current === 'DICTATION') setFinished(true);
       } else {
         updateStoredCompletedScore(submittedLessonId, finalScore);
       }
@@ -548,25 +769,69 @@ export default function Home() {
       if (!isLeavingLessonRef.current && activeLessonIdRef.current === submittedLessonId) {
         if (e instanceof ApiError && e.status === 401) setLoginPrompt(true);
         setCompletionSyncPending(true);
-        setError(`Điểm tạm thời đã lưu trên thiết bị; kết quả sẽ tự đồng bộ khi kết nối được máy chủ. ${(e as Error).message}`);
-        setFinished(true);
+        if (practiceModeRef.current === 'DICTATION') {
+          setError(`Điểm tạm thời đã lưu trên thiết bị; kết quả sẽ tự đồng bộ khi kết nối được máy chủ. ${(e as Error).message}`);
+          setFinished(true);
+        }
       }
     } finally { setSending(false); }
   }
 
-  function persistLatestDraft() {
-    const draft = latestDraftRef.current;
-    if (!draft) return;
+  function persistModeDraft(requestedMode: PracticeMode) {
+    if (!lesson || !sentences.length || !draftReady) return;
     try {
-      localStorage.setItem(lessonDraftKey(draft.lessonId), JSON.stringify(draft));
-      setSavedDrafts(readLessonDrafts());
+      if (requestedMode === 'DICTATION') {
+        if (!dictationStarted) return;
+        const draft: LessonDraft = { lessonId: lesson.id, answers, current: dictationCurrent, hintCounts, transcriptUsed, scores, mode, savedAt: new Date().toISOString(), isCompleted: hasCompleted, totalScore: hasCompleted ? completionScore : null };
+        latestDraftRef.current = draft;
+        localStorage.setItem(lessonDraftKey(lesson.id), JSON.stringify(draft));
+        setSavedDrafts(readLessonDrafts());
+        setRecentLesson(lesson.id, draft.isCompleted ? 'COMPLETED' : 'IN_PROGRESS', requestedMode);
+      } else {
+        if (!shadowingStarted) return;
+        const draft: ShadowingDraft = { lessonId: lesson.id, current: shadowingCurrent, scores: shadowingScores, sources: shadowingSources, savedAt: new Date().toISOString(), isCompleted: shadowingLessonCompleted, totalScore: shadowingLessonCompleted ? Math.round(Object.values(shadowingScores).reduce((sum, value) => sum + value, 0) / Math.max(Object.keys(shadowingScores).length, 1)) : null };
+        latestShadowingDraftRef.current = draft;
+        localStorage.setItem(shadowingDraftKey(lesson.id), JSON.stringify(draft));
+        setSavedShadowingDrafts(readShadowingDrafts());
+        setRecentLesson(lesson.id, draft.isCompleted ? 'COMPLETED' : 'IN_PROGRESS', requestedMode);
+      }
     } catch {
       setError('Không thể tự lưu tiến trình trên thiết bị này. Hãy kiểm tra dung lượng lưu trữ trình duyệt.');
     }
   }
 
+  function clearModeProgress(lessonId: string, requestedMode: PracticeMode) {
+    if (requestedMode === 'SHADOWING') {
+      localStorage.removeItem(shadowingDraftKey(lessonId));
+      localStorage.removeItem(shadowingAttemptsKey(lessonId));
+      return;
+    }
+    localStorage.removeItem(lessonDraftKey(lessonId));
+    const pendingRaw = localStorage.getItem(PENDING_KEY);
+    if (pendingRaw) {
+      try {
+        const pending = JSON.parse(pendingRaw) as { lessonId?: string };
+        if (pending.lessonId === lessonId) localStorage.removeItem(PENDING_KEY);
+      } catch { localStorage.removeItem(PENDING_KEY); }
+    }
+    const legacyRaw = localStorage.getItem(DRAFT_KEY);
+    if (legacyRaw) {
+      try {
+        const legacy = JSON.parse(legacyRaw) as { lessonId?: string };
+        if (legacy.lessonId === lessonId) localStorage.removeItem(DRAFT_KEY);
+      } catch { localStorage.removeItem(DRAFT_KEY); }
+    }
+  }
+
+  function persistLatestDraft() {
+    persistModeDraft('DICTATION');
+    persistModeDraft('SHADOWING');
+  }
+
   function clearActiveLesson() {
     activeLessonIdRef.current = null;
+    latestDraftRef.current = null;
+    latestShadowingDraftRef.current = null;
     setLesson(null);
     setFinished(false);
     setHasCompleted(false);
@@ -574,10 +839,14 @@ export default function Home() {
     setCompletionSyncPending(false);
     setSentences([]);
     setScores({});
+    setDictationStarted(false);
     setAnswers({});
     setHintCounts({});
     setTranscriptUsed({});
-    setCurrent(0);
+    setDictationCurrent(0);
+    setShadowingCurrent(0);
+    setShadowingScores({});
+    setShadowingStarted(false);
     setHintLevel(0);
     setDraftReady(false);
   }
@@ -586,14 +855,33 @@ export default function Home() {
     persistLatestDraft();
     openedFromLibraryRef.current = false;
     isLeavingLessonRef.current = true;
+    setLibraryView('AVAILABLE');
     setResumeSelection(null);
-    router.replace('/practice/dictation');
+    router.replace(`/practice/dictation?mode=${practiceMode.toLowerCase()}`);
     clearActiveLesson();
   }
 
-  function restartCurrentLesson() {
+  async function restartCurrentLesson() {
     if (!lesson) return;
+    if (practiceMode === 'SHADOWING') {
+      try { await clearShadowingRecordings(lesson.id); }
+      catch { setError('Không xóa được bản ghi cũ trên thiết bị.'); return; }
+      localStorage.removeItem(shadowingDraftKey(lesson.id));
+      localStorage.removeItem(shadowingAttemptsKey(lesson.id));
+      latestShadowingDraftRef.current = null;
+      setShadowingScores({});
+      setShadowingCurrent(0);
+      setShadowingStarted(true);
+      setCompletionScore(null);
+      setCompletionSyncPending(false);
+      setDraftReady(true);
+      setFinished(false);
+      setRecentLesson(lesson.id, 'IN_PROGRESS', 'SHADOWING');
+      setSavedShadowingDrafts(readShadowingDrafts());
+      return;
+    }
     localStorage.removeItem(lessonDraftKey(lesson.id));
+    latestDraftRef.current = null;
     const pendingRaw = localStorage.getItem(PENDING_KEY);
     if (pendingRaw) {
       try {
@@ -602,7 +890,8 @@ export default function Home() {
       } catch { localStorage.removeItem(PENDING_KEY); }
     }
     setAnswers({});
-    setCurrent(0);
+    setDictationCurrent(0);
+    setDictationStarted(true);
     setHintLevel(0);
     setHintCounts({});
     setTranscriptOn(false);
@@ -614,13 +903,13 @@ export default function Home() {
     setCompletionSyncPending(false);
     setDraftReady(true);
     setFinished(false);
-    setRecentLesson(lesson.id, 'IN_PROGRESS');
+    setRecentLesson(lesson.id, 'IN_PROGRESS', 'DICTATION');
     setSavedDrafts(readLessonDrafts());
   }
 
   function selectSentence(index: number) {
     setCurrent(index);
-    setHintLevel(hintCounts[sentences[index]?.id] ?? 0);
+    if (practiceMode === 'DICTATION') setHintLevel(hintCounts[sentences[index]?.id] ?? 0);
     setTranscriptOn(false);
     setError('');
   }
@@ -654,6 +943,7 @@ export default function Home() {
       persistLatestDraft();
       isLeavingLessonRef.current = true;
       openedFromLibraryRef.current = false;
+      setLibraryView('AVAILABLE');
       clearActiveLesson();
     };
     window.addEventListener('popstate', handleBackNavigation);
@@ -663,6 +953,7 @@ export default function Home() {
   useEffect(() => {
     if (!lesson || finished) return;
     const handleShortcut = (event: KeyboardEvent) => {
+      if (practiceMode !== 'DICTATION') return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       const isTyping = Boolean(target?.closest('input, textarea, select, [contenteditable="true"]'));
       const isControl = Boolean(target?.closest('button, a, [role="button"]'));
@@ -703,45 +994,66 @@ export default function Home() {
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [lesson, finished, current, sentences, answers, scores, hintLevel, hintCounts, transcriptUsed, transcriptOn]);
+  }, [lesson, finished, current, sentences, answers, scores, hintLevel, hintCounts, transcriptUsed, transcriptOn, practiceMode]);
 
   if (loading) return <main className="dictation-screen min-h-screen bg-slate-50 p-8 text-slate-600">Đang tải bài Dictation…</main>;
   if (!lesson) return (
     <main className="dictation-screen min-h-screen bg-slate-50 px-5 py-12 text-slate-900">
       <div className="mx-auto max-w-5xl">
-        <header className="mb-10"><button type="button" onClick={goBackFromLibrary} className="dictation-back-link">← Quay lại</button><p className="text-sm font-semibold uppercase tracking-[.2em] text-indigo-600">Shadowtation · Dictation</p><h1 className="mt-3 text-4xl font-bold">Chọn bài luyện nghe</h1><p className="mt-2 text-slate-500">Nghe từng câu, chép lại và nhận phản hồi tức thì.</p></header>
+        <div className="practice-method-tabs" role="tablist" aria-label="Chọn chế độ luyện tập"><button type="button" role="tab" aria-selected={practiceMode === 'DICTATION'} onClick={() => changePracticeMode('DICTATION')} className={practiceMode === 'DICTATION' ? 'method-active' : ''}>Dictation</button><button type="button" role="tab" aria-selected={practiceMode === 'SHADOWING'} onClick={() => changePracticeMode('SHADOWING')} className={practiceMode === 'SHADOWING' ? 'method-active' : ''}>Shadowing</button></div>
+        <header className="mb-10"><button type="button" onClick={goBackFromLibrary} className="dictation-back-link">← Quay lại</button><p className="text-sm font-semibold uppercase tracking-[.2em] text-indigo-600">Shadowtation · {practiceMode === 'SHADOWING' ? 'Shadowing' : 'Dictation'}</p><h1 className="mt-3 text-4xl font-bold">{practiceMode === 'SHADOWING' ? 'Chọn bài luyện Shadowing' : 'Chọn bài luyện nghe'}</h1><p className="mt-2 text-slate-500">{practiceMode === 'SHADOWING' ? 'Nghe câu mẫu, ghi âm giọng nói và xem kết quả chấm phát âm AI.' : 'Nghe từng câu, chép lại và nhận phản hồi tức thì.'}</p></header>
         {error && <p role="alert" className="mb-5 rounded-xl bg-rose-50 p-4 text-rose-700">{error}</p>}
+        <div className="library-view-tabs" role="tablist" aria-label="Nhóm bài học">
+          <button type="button" role="tab" aria-selected={libraryView === 'AVAILABLE'} className={libraryView === 'AVAILABLE' ? 'active' : ''} onClick={() => setLibraryView('AVAILABLE')}>Bài học có sẵn <span>{visibleLessons.length}</span></button>
+          <button type="button" role="tab" aria-selected={libraryView === 'RECENT'} className={libraryView === 'RECENT' ? 'active' : ''} onClick={() => setLibraryView('RECENT')}>Bài đang luyện dở &amp; học gần đây <span>{recentLibraryLessons.length}</span></button>
+          <button type="button" role="tab" aria-selected={libraryView === 'CUSTOM'} className={libraryView === 'CUSTOM' ? 'active' : ''} onClick={() => setLibraryView('CUSTOM')}><Plus aria-hidden="true" size={17} />Thêm bài học của riêng bạn</button>
+        </div>
+        {libraryView === 'AVAILABLE' && <>
         <div className="dictation-library-tools">
           <div className="library-search" role="search"><Search aria-hidden="true" size={19} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm bài nghe theo tên..." aria-label="Tìm bài nghe" />{search && <button type="button" className="search-clear" aria-label="Xóa nội dung tìm kiếm" onClick={() => setSearch('')}><X size={17} /></button>}</div>
           <select aria-label="Lọc trình độ" value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}><option value="ALL">Mọi trình độ</option><option value="BEGINNER">A1–A2 · Cơ bản</option><option value="INTERMEDIATE">B1–B2 · Trung cấp</option><option value="ADVANCED">C1–C2 · Nâng cao</option></select>
           <select aria-label="Lọc loại nội dung" value={mediaFilter} onChange={(event) => setMediaFilter(event.target.value)}><option value="ALL">Audio, video, podcast</option><option value="AUDIO">Audio</option><option value="VIDEO">Video</option><option value="PODCAST">Podcast</option></select>
           <button onClick={() => setShowFavorites((value) => !value)} className={showFavorites ? 'library-filter active' : 'library-filter'}>{showFavorites ? '♥ Đang xem yêu thích' : '♡ Yêu thích'}</button>
         </div>
-        {recentLibraryItems.length > 0 && <section className="dictation-recent-section" aria-labelledby="recent-lessons-title">
-          <h2 id="recent-lessons-title" className="library-section-title">Bài đang luyện dở &amp; học gần đây <span>{recentLibraryItems.length}</span></h2>
-          <p className="mb-4 text-sm text-slate-600">Tiến trình mới nhất được tự lưu trên thiết bị này. Chọn bài để tiếp tục hoặc làm lại từ đầu.</p>
+        </>}
+        {libraryView === 'RECENT' && (recentLibraryLessons.length > 0 ? <section className="dictation-recent-section" aria-labelledby="recent-lessons-title">
+          <h2 id="recent-lessons-title" className="library-section-title">Bài đang luyện dở &amp; học gần đây <span>{recentLibraryLessons.length}</span></h2>
+          <p className="mb-4 text-sm text-slate-600">Mỗi bài học chỉ xuất hiện một lần. Tiến trình Dictation và Shadowing được lưu riêng; chọn chế độ ở trên để mở đúng tiến trình.</p>
           <div className="dictation-library-grid">
-            {recentLibraryItems.map(({ lesson: item, recent, draft }) => <article key={`recent-${item.id}`} className="dictation-lesson-card recent-lesson-card">
-              <button onClick={() => beginLesson(item)} className="lesson-select">
-                <div className="lesson-badges"><span className={`recent-status-badge ${draft?.isCompleted || recent.status === 'COMPLETED' ? 'completed' : draft ? 'in-progress' : ''}`}>{draft?.isCompleted || recent.status === 'COMPLETED' ? 'Đã hoàn thành' : draft ? 'Đang luyện dở' : 'Đã mở gần đây'}</span><span className={`media-type-badge media-type-${(item.mediaType ?? 'AUDIO').toLowerCase()}`}>{mediaTypeLabel(item.mediaType)}</span></div>
-                <h3 className="mt-4 text-lg font-bold">{item.title}</h3>
-                <p className="mt-2 text-sm text-slate-500">{draft ? `${Object.keys(draft.scores).length}/${item.sentenceCount} câu đã xác nhận · ${item.sentenceCount ? Math.round(Object.keys(draft.scores).length / item.sentenceCount * 100) : 0}% hoàn thành` : `${formatDuration(item.durationSeconds)} · ${item.sentenceCount} câu`}</p>
-                {draft?.isCompleted && typeof draft.totalScore === 'number' && <p className="mt-2 text-sm font-bold text-indigo-700">Điểm tổng: {draft.totalScore}/100</p>}
-                <span className="mt-5 inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">{draft ? 'Mở tiến trình →' : 'Luyện lại →'}</span>
-              </button>
-            </article>)}
+            {recentLibraryLessons.map(({ lesson: item, progressByMode }) => {
+              const activeProgress = progressByMode[practiceMode];
+              const hasActiveDraft = Boolean(activeProgress?.hasDraft);
+              return <article key={`recent-${item.id}`} className="dictation-lesson-card recent-lesson-card">
+                <button onClick={() => beginLesson(item, true, true, practiceMode)} className="lesson-select">
+                  <div className="lesson-badges">
+                    <span className={`recent-status-badge ${activeProgress?.isCompleted ? 'completed' : hasActiveDraft ? 'in-progress' : ''}`}>{activeProgress?.isCompleted ? 'Đã hoàn thành' : hasActiveDraft ? 'Đang luyện dở' : 'Đã mở gần đây'}</span>
+                    <span className={`media-type-badge media-type-${(item.mediaType ?? 'AUDIO').toLowerCase()}`}>{mediaTypeLabel(item.mediaType)}</span>
+                  </div>
+                  <h3 className="mt-4 text-lg font-bold">{item.title}</h3>
+                  <p className="mt-2 text-sm text-slate-500">{formatDuration(item.durationSeconds)} · {item.sentenceCount} câu · Một nguồn bài học dùng cho cả hai chế độ</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {progressByMode.DICTATION && <span className="media-type-badge">Dictation · {progressByMode.DICTATION.completedCount}/{item.sentenceCount} câu{progressByMode.DICTATION.isCompleted && typeof progressByMode.DICTATION.totalScore === 'number' ? ` · Tổng ${progressByMode.DICTATION.totalScore}/100` : ''}</span>}
+                    {progressByMode.SHADOWING && <span className="media-type-badge">Shadowing · {progressByMode.SHADOWING.completedCount}/{item.sentenceCount} câu{progressByMode.SHADOWING.isCompleted && typeof progressByMode.SHADOWING.totalScore === 'number' ? ` · Tổng ${progressByMode.SHADOWING.totalScore}/100` : ''}</span>}
+                  </div>
+                  {activeProgress?.isCompleted && typeof activeProgress.totalScore === 'number' && <p className="mt-2 text-sm font-bold text-indigo-700">Điểm {practiceMode === 'SHADOWING' ? 'Shadowing' : 'Dictation'}: {activeProgress.totalScore}/100</p>}
+                  <span className="mt-5 inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">{hasActiveDraft ? 'Mở tiến trình theo chế độ đã chọn →' : 'Bắt đầu theo chế độ đã chọn →'}</span>
+                </button>
+              </article>;
+            })}
           </div>
-        </section>}
+        </section> : <div className="library-empty recent-empty">Chưa có bài đang luyện dở hoặc học gần đây.</div>)}
+        {libraryView === 'AVAILABLE' && <>
         <h2 className="library-section-title">Bài học có sẵn <span>{visibleLessons.length}</span></h2>
         <div className="dictation-library-grid">
-        {visibleLessons.map((item) => <article key={item.id} className="dictation-lesson-card"><button aria-label={favorites.includes(item.id) ? 'Bỏ yêu thích' : 'Thêm yêu thích'} title={favorites.includes(item.id) ? 'Bỏ yêu thích' : 'Thêm vào yêu thích'} className="lesson-heart" onClick={() => toggleFavorite(item.id)}>{favorites.includes(item.id) ? '♥' : '♡'}</button><button onClick={() => beginLesson(item)} className="lesson-select">
+        {visibleLessons.map((item) => <article key={item.id} className="dictation-lesson-card"><button aria-label={favorites.includes(item.id) ? 'Bỏ yêu thích' : 'Thêm yêu thích'} title={favorites.includes(item.id) ? 'Bỏ yêu thích' : 'Thêm vào yêu thích'} className="lesson-heart" onClick={() => toggleFavorite(item.id)}>{favorites.includes(item.id) ? '♥' : '♡'}</button><button onClick={() => beginLesson(item, true, false, practiceMode)} className="lesson-select">
             <div className="lesson-badges"><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">{item.level}</span><span className={`media-type-badge media-type-${(item.mediaType ?? 'AUDIO').toLowerCase()}`}>{mediaTypeLabel(item.mediaType)}</span>{item.access === 'LOCKED' ? <span className="premium-badge">🔒 Mở khóa Premium</span> : item.isPremiumOnly && <span className="premium-badge">✦ Premium</span>}</div>
             <h2 className="mt-5 text-xl font-bold">{item.title}</h2><p className="mt-2 text-sm text-slate-500">{formatDuration(item.durationSeconds)} · {item.sentenceCount} câu · Có transcript tiếng Anh</p><p className="lesson-source-name">Nguồn: {item.sourceName || 'Bài học có sẵn'}</p>
-            <span className="mt-6 inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Bắt đầu →</span>
+            <span className="mt-6 inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">{practiceMode === 'SHADOWING' ? 'Luyện Shadowing →' : 'Bắt đầu →'}</span>
           </button></article>)}
-          {!visibleLessons.length && <div className="library-empty">{lessons.length ? 'Không có bài học phù hợp bộ lọc.' : 'Chưa có bài Dictation được xuất bản.'}</div>}
+          {!visibleLessons.length && <div className="library-empty">{lessons.length ? 'Không có bài học phù hợp bộ lọc.' : 'Chưa có bài học được xuất bản.'}</div>}
         </div>
-        <section className="youtube-import">
+        </>}
+        {libraryView === 'CUSTOM' && <section className="youtube-import">
           <div>
             <p className="library-kicker">NGUỒN CỦA BẠN</p>
             <h2>Thêm bài học của riêng bạn</h2>
@@ -765,36 +1077,43 @@ export default function Home() {
               {youtubeError && <p role="alert" className="text-sm text-rose-600">{youtubeError}</p>}
             </div>
           </div>
-        </section>
+        </section>}
       </div>
-      {resumeSelection && <ResumeLessonDialog lessonTitle={resumeSelection.lesson.title} savedAt={resumeSelection.draft.savedAt} confirmedCount={Object.keys(resumeSelection.draft.scores).length} totalScore={resumeSelection.draft.isCompleted ? resumeSelection.draft.totalScore : null} onContinue={resumeSavedLesson} onRestart={restartSavedLesson} />}
+      {resumeSelection && <ResumeLessonDialog lessonTitle={resumeSelection.lesson.title} savedAt={resumeSelection.progress.lastOpenedAt} confirmedCount={resumeSelection.progress.completedCount} totalScore={resumeSelection.progress.isCompleted ? resumeSelection.progress.totalScore : null} onContinue={resumeSavedLesson} onRestart={restartSavedLesson} />}
       {lockedLesson && <PremiumRequiredDialog lessonTitle={lockedLesson.title} onClose={() => setLockedLesson(null)} />}
       {loginPrompt && <LoginRequiredDialog onClose={() => setLoginPrompt(false)} />}
     </main>
   );
 
-  if (finished) return <main className="dictation-screen completion-screen grid min-h-screen place-items-center bg-slate-50 p-6"><section className="completion-card w-full max-w-lg rounded-3xl bg-white p-8 text-center shadow-xl md:p-10"><div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">✓</div><h1 className="mt-5 text-3xl font-bold">Hoàn thành bài luyện tập</h1><p className="mt-2 text-slate-500">{lesson.title}</p><p className="mt-8 text-6xl font-black text-indigo-600">{completionScore ?? average}<span className="text-2xl">/100</span></p><p className="mt-2 text-slate-500">Điểm tổng · {completedCount}/{sentences.length} câu đã xác nhận</p><div className="completion-progress" role="progressbar" aria-label="Tiến độ hoàn thành" aria-valuenow={sentences.length ? Math.round(completedCount / sentences.length * 100) : 0} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div>{completionSyncPending && <p role="status" className="completion-sync-note">Điểm và tiến trình đã lưu trên thiết bị; sẽ đồng bộ với máy chủ khi kết nối được khôi phục.</p>}{error && <p role="alert" className="completion-sync-note">{error}</p>}<div className="completion-actions"><button type="button" onClick={restartCurrentLesson}>1. Làm lại từ đầu</button><button type="button" onClick={returnToLibrary}>2. Chọn bài luyện khác</button><button type="button" onClick={() => setFinished(false)}>3. Tiếp tục làm và chỉnh sửa tiến trình</button></div>{loginPrompt && <LoginRequiredDialog onClose={() => setLoginPrompt(false)} />}</section></main>;
+  if (finished) return <main className="dictation-screen completion-screen grid min-h-screen place-items-center bg-slate-50 p-6"><section className="completion-card w-full max-w-lg rounded-3xl bg-white p-8 text-center shadow-xl md:p-10"><div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">✓</div><h1 className="mt-5 text-3xl font-bold">Hoàn thành bài luyện tập</h1><p className="mt-2 text-slate-500">{lesson.title}</p><p className="mt-8 text-6xl font-black text-indigo-600">{completionScore ?? average}<span className="text-2xl">/100</span></p><p className="mt-2 text-slate-500">Điểm tổng {practiceMode === 'SHADOWING' ? 'Shadowing' : 'Dictation'} · {completedCount}/{sentences.length} {practiceMode === 'SHADOWING' ? 'câu đã chấm AI' : 'câu đã xác nhận'}</p><div className="completion-progress" role="progressbar" aria-label="Tiến độ hoàn thành" aria-valuenow={sentences.length ? Math.round(completedCount / sentences.length * 100) : 0} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div>{completionSyncPending && <p role="status" className="completion-sync-note">Điểm và tiến trình đã lưu trên thiết bị; sẽ đồng bộ với máy chủ khi kết nối được khôi phục.</p>}{error && <p role="alert" className="completion-sync-note">{error}</p>}<div className="completion-actions"><button type="button" onClick={restartCurrentLesson}>1. Làm lại từ đầu</button><button type="button" onClick={returnToLibrary}>2. Chọn bài luyện khác</button><button type="button" onClick={() => setFinished(false)}>3. Tiếp tục làm và chỉnh sửa tiến trình</button></div>{loginPrompt && <LoginRequiredDialog onClose={() => setLoginPrompt(false)} />}</section></main>;
 
   return (
     <main className="dictation-screen min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b bg-white"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4"><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={returnToLibrary} className="dictation-back-link">← Danh sách bài</button><button type="button" onClick={returnToLibrary} className="dictation-exit-button">Thoát bài</button></div><div className="text-right"><p className="font-bold">{lesson.title}</p><p className="text-xs text-slate-500">{lesson.level}</p></div></div></header>
+      <header className="border-b bg-white"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4"><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={returnToLibrary} className="dictation-back-link">← Danh sách bài</button><button type="button" onClick={returnToLibrary} className="dictation-exit-button">Thoát bài</button><Link href={practiceMode === 'DICTATION' ? '/practice/dictation/results' : '/practice/shadowing/results'} className="dictation-exit-button inline-flex items-center justify-center text-center">Xem lịch sử kết quả chấm {practiceMode === 'DICTATION' ? 'Dictation' : 'Shadowing'}</Link></div><div className="text-right"><p className="font-bold">{lesson.title}</p><p className="text-xs text-slate-500">{lesson.level}</p></div></div></header>
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-7 lg:grid-cols-[260px_1fr]">
-        <aside className="rounded-2xl border bg-white p-5"><div className="flex justify-between text-sm"><span className="font-bold">Tiến độ</span><span>{completedCount}/{sentences.length} câu</span></div><div className="mt-3 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-indigo-600" style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div><nav className="mt-5 grid grid-cols-5 gap-2 lg:grid-cols-3">{sentences.map((item, i) => <button key={item.id} onClick={() => selectSentence(i)} aria-label={`Câu ${i + 1}`} className={`h-10 rounded-lg text-sm font-bold ${current === i ? 'bg-indigo-600 text-white' : scores[item.id] ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{i + 1}</button>)}</nav>{hasCompleted && typeof completionScore === 'number' && <div className="mt-6 rounded-xl bg-indigo-50 p-4"><p className="text-xs font-semibold uppercase text-indigo-600">Điểm tổng đã lưu</p><p className="mt-1 text-3xl font-black text-indigo-800">{completionScore}/100</p></div>}</aside>
+        <aside className="rounded-2xl border bg-white p-5"><div className="flex justify-between text-sm"><span className="font-bold">Tiến độ</span><span>{completedCount}/{sentences.length} câu</span></div><div className="mt-3 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-indigo-600" style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div><nav className="mt-5 grid grid-cols-5 gap-2 lg:grid-cols-3">{sentences.map((item, i) => <button key={item.id} onClick={() => selectSentence(i)} aria-label={`Câu ${i + 1}`} className={`h-10 rounded-lg text-sm font-bold ${current === i ? 'bg-indigo-600 text-white' : (practiceMode === 'SHADOWING' ? shadowingScores[item.id] !== undefined : Boolean(scores[item.id])) ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{i + 1}</button>)}</nav>{practiceMode === 'DICTATION' && hasCompleted && typeof completionScore === 'number' && <div className="mt-6 rounded-xl bg-indigo-50 p-4"><p className="text-xs font-semibold uppercase text-indigo-600">Điểm tổng đã lưu</p><p className="mt-1 text-3xl font-black text-indigo-800">{completionScore}/100</p></div>}{practiceMode === 'SHADOWING' && shadowingLessonCompleted && completedCount > 0 && <div className="mt-6 rounded-xl bg-indigo-50 p-4"><p className="text-xs font-semibold uppercase text-indigo-600">Điểm tổng đã lưu</p><p className="mt-1 text-3xl font-black text-indigo-800">{average}/100</p></div>}</aside>
         <section className="dictation-workbench min-w-0 rounded-2xl border bg-white p-5 shadow-sm md:p-8">
           {error && <p role="alert" className="mb-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error}</p>}
           {!sentence ? <div className="py-12 text-center text-slate-600">{error ? <><p>{error}</p><button type="button" onClick={returnToLibrary} className="dictation-back-link mt-5">← Danh sách bài học</button></> : 'Đang tải nội dung bài học…'}</div> : <>
-            <div className="practice-method-tabs" role="tablist" aria-label="Phương pháp luyện tập"><button role="tab" aria-selected="true" className="method-active">Dictation</button><Link role="tab" aria-selected="false" href="/features/uc-04">Shadowing <span className="method-soon">sắp ra mắt</span></Link></div>
-            <div className="dictation-practice-heading"><div><p className="text-sm font-semibold text-indigo-600">CÂU {current + 1} / {sentences.length}</p><h1>Nghe và nhập nội dung</h1></div><div className="dictation-mode-switch"><button onClick={() => setMode('FULL')} aria-pressed={mode === 'FULL'} className={mode === 'FULL' ? 'active' : ''}>Chép cả câu</button><button onClick={() => setMode('BLANKS')} aria-pressed={mode === 'BLANKS'} className={mode === 'BLANKS' ? 'active' : ''}>Điền từ khuyết</button></div></div>
-            <div className="dictation-shortcuts" aria-label="Phím tắt Dictation"><strong>Phím tắt</strong><span><kbd>Alt</kbd>+<kbd>M</kbd> phát / tạm dừng</span><span><kbd>Alt</kbd>+<kbd>R</kbd> nghe lại</span><span><kbd>Alt</kbd>+<kbd>T</kbd> thử lại câu</span><span><kbd>Alt</kbd>+<kbd>G</kbd> gợi ý</span><span><kbd>Alt</kbd>+<kbd>P</kbd> transcript</span><span><kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> đổi câu</span>{lesson.mediaType !== 'VIDEO' && <><span><kbd>←</kbd>/<kbd>→</kbd> tua lùi / tới 5 giây</span><span><kbd>M</kbd> tắt / bật tiếng</span></>}<span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> xác nhận khi đang nhập · <kbd>Enter</kbd> khi không gõ</span><span><kbd>Esc</kbd> về danh sách · tự lưu</span><small>Các phím tắt không kích hoạt trong ô trả lời; Space luôn dùng để nhập khoảng trắng.</small></div>
-            <MediaDictationPlayer key={lesson.id} mediaType={lesson.mediaType ?? 'AUDIO'} mediaUrl={lesson.mediaType === 'VIDEO' ? (lesson.sourceUrl ?? lesson.audioUrl) : lesson.audioUrl} title={lesson.title} startTime={sentence.startTime} endTime={sentence.endTime} onSeekToTime={lesson.mediaType === 'VIDEO' ? undefined : seekToTimeAndSelectSentence} />
-            <div className="dictation-controls"><button onClick={nextHint} disabled={hintLevel >= 3 || Boolean(scores[sentence.id])} className="hint-action">✦ Gợi ý {hintLevel ? `(${hintLevel}/3 · −${hintPenalty(hintLevel, hintPenalties)}đ)` : ''}</button><button disabled={!transcriptOn && Boolean(scores[sentence.id])} onClick={toggleTranscript} className={`transcript-action ${transcriptOn ? 'active' : ''}`}>{transcriptOn ? 'Ẩn transcript' : 'Hiện transcript'}</button><button onClick={retrySentence}>Thử lại câu</button><span>Dùng gợi ý sẽ giảm điểm câu.</span></div>
-            {hintLevel > 0 && <div className="dictation-hint-card"><p>Gợi ý cấp {hintLevel} · Cấp cao hơn mở thêm manh mối</p><p>{maskedHint(sentence.textContent, hintLevel)}</p></div>}
-            {transcriptOn && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-amber-800">Transcript</p><p className="mt-1 text-amber-950">{sentence.textContent}</p></div>}
-            <label htmlFor="dictation-answer" className="dictation-answer-label">Câu trả lời của bạn</label>
-            {mode === 'FULL' ? <textarea id="dictation-answer" value={answer} onChange={(event) => saveAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); confirmSentence(); } }} placeholder="Nhập những gì bạn nghe được…" rows={4} className="dictation-answer-input" /> : <FillBlanks key={`${sentence.id}-${fillReset}`} text={sentence.textContent} value={answer} onChange={saveAnswer} onConfirm={confirmSentence} />}
-            <div className="dictation-live-feedback"><span>Đối chiếu trực tiếp · cập nhật ngay khi bạn nhập</span>{liveScore && <span className="live-accuracy">Độ chính xác hiện tại: {liveScore.accuracy}%</span>}</div>
-            {scores[sentence.id] && <div className="dictation-confirmed-result"><p>Đã xác nhận câu · {scores[sentence.id].accuracy}% sau gợi ý</p><span>Điểm này được tính vào kết quả cuối cùng. Chọn “Thử lại câu” để thay bằng lượt mới.</span></div>}
-            <div className="dictation-navigation"><button onClick={() => selectSentence(current - 1)} disabled={current === 0}>← Câu trước</button><div><button onClick={confirmSentence} className="confirm-answer-button">Xác nhận câu</button>{current < sentences.length - 1 ? <button onClick={() => selectSentence(current + 1)} className="next-sentence-button">Câu tiếp →</button> : <button disabled={sending} onClick={finishLesson} className="finish-lesson-button">{sending ? 'Đang lưu…' : 'Hoàn thành bài'}</button>}</div></div>
+            <div className="dictation-practice-heading"><div><p className="text-sm font-semibold text-indigo-600">CÂU {current + 1} / {sentences.length}</p><h1>{practiceMode === 'SHADOWING' ? 'Nghe và nói nhại theo câu mẫu' : 'Nghe và nhập nội dung'}</h1></div>{practiceMode === 'DICTATION' && <div className="dictation-mode-switch"><button onClick={() => setMode('FULL')} aria-pressed={mode === 'FULL'} className={mode === 'FULL' ? 'active' : ''}>Chép cả câu</button><button onClick={() => setMode('BLANKS')} aria-pressed={mode === 'BLANKS'} className={mode === 'BLANKS' ? 'active' : ''}>Điền từ khuyết</button></div>}</div>
+            <MediaDictationPlayer key={`${lesson.id}-shared-audio`} mediaType={lesson.mediaType ?? 'AUDIO'} mediaUrl={lesson.mediaType === 'VIDEO' ? (lesson.sourceUrl ?? lesson.audioUrl) : lesson.audioUrl} title={lesson.title} startTime={sentence.startTime} endTime={sentence.endTime} onSeekToTime={lesson.mediaType === 'VIDEO' ? undefined : seekToTimeAndSelectSentence} onTimeUpdate={setMediaTime} />
+            {practiceMode === 'DICTATION' ? <>
+              <div className="dictation-shortcuts" aria-label="Phím tắt Dictation"><strong>Phím tắt</strong><span><kbd>Alt</kbd>+<kbd>M</kbd> phát / tạm dừng</span><span><kbd>Alt</kbd>+<kbd>R</kbd> nghe lại</span><span><kbd>Alt</kbd>+<kbd>T</kbd> thử lại câu</span><span><kbd>Alt</kbd>+<kbd>G</kbd> gợi ý</span><span><kbd>Alt</kbd>+<kbd>P</kbd> transcript</span><span><kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> đổi câu</span>{lesson.mediaType !== 'VIDEO' && <><span><kbd>←</kbd>/<kbd>→</kbd> tua lùi / tới 5 giây</span><span><kbd>M</kbd> tắt / bật tiếng</span></>}<span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> xác nhận khi đang nhập · <kbd>Enter</kbd> khi không gõ</span><span><kbd>Esc</kbd> về danh sách · tự lưu</span><small>Các phím tắt không kích hoạt trong ô trả lời; Space luôn dùng để nhập khoảng trắng.</small></div>
+              <div className="dictation-controls"><button onClick={nextHint} disabled={hintLevel >= 3 || Boolean(scores[sentence.id])} className="hint-action">✦ Gợi ý {hintLevel ? `(${hintLevel}/3 · −${hintPenalty(hintLevel, hintPenalties)}đ)` : ''}</button><button disabled={!transcriptOn && Boolean(scores[sentence.id])} onClick={toggleTranscript} className={`transcript-action ${transcriptOn ? 'active' : ''}`}>{transcriptOn ? 'Ẩn transcript' : 'Hiện transcript'}</button><button onClick={retrySentence}>Thử lại câu</button><span>Dùng gợi ý sẽ giảm điểm câu.</span></div>
+              {hintLevel > 0 && <div className="dictation-hint-card"><p>Gợi ý cấp {hintLevel} · Cấp cao hơn mở thêm manh mối</p><p>{maskedHint(sentence.textContent, hintLevel)}</p></div>}
+              {transcriptOn && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-amber-800">Transcript</p><p className="mt-1 text-amber-950">{sentence.textContent}</p></div>}
+              <label htmlFor="dictation-answer" className="dictation-answer-label">Câu trả lời của bạn</label>
+              {mode === 'FULL' ? <textarea id="dictation-answer" value={answer} onChange={(event) => saveAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); confirmSentence(); } }} placeholder="Nhập những gì bạn nghe được…" rows={4} className="dictation-answer-input" /> : <FillBlanks key={`${sentence.id}-${fillReset}`} text={sentence.textContent} value={answer} onChange={saveAnswer} onConfirm={confirmSentence} />}
+              <div className="dictation-live-feedback"><span>Đối chiếu trực tiếp · cập nhật ngay khi bạn nhập</span>{liveScore && <span className="live-accuracy">Độ chính xác hiện tại: {liveScore.accuracy}%</span>}</div>
+              {scores[sentence.id] && <div className="dictation-confirmed-result"><p>Đã xác nhận câu · {scores[sentence.id].accuracy}% sau gợi ý</p><span>Điểm này được tính vào kết quả cuối cùng. Chọn “Thử lại câu” để thay bằng lượt mới.</span></div>}
+              <div className="dictation-navigation"><button onClick={() => selectSentence(current - 1)} disabled={current === 0}>← Câu trước</button><div><button onClick={confirmSentence} className="confirm-answer-button">Xác nhận câu</button>{current < sentences.length - 1 ? <button onClick={() => selectSentence(current + 1)} className="next-sentence-button">Câu tiếp →</button> : <button disabled={sending} onClick={finishLesson} className="finish-lesson-button">{sending ? 'Đang lưu…' : 'Hoàn thành bài'}</button>}</div></div>
+            </> : shadowingSentence && <>
+              <ShadowingPractice key={lesson.id} lessonId={lesson.id} sentence={shadowingSentence} activeWordIndex={karaokeWordIndex} isActive onCompleted={onShadowingCompleted} onScoreReset={onShadowingScoreReset} />
+              <div className="shadowing-completion-action">
+                <button type="button" onClick={finishShadowingLesson} disabled={!shadowingComplete}>Hoàn thành bài Shadowing</button>
+                {!shadowingComplete && <p>Còn {shadowingRemaining} câu chưa được chấm. Ghi âm và gửi chấm AI từng câu để mở nút hoàn thành.</p>}
+              </div>
+            </>}
           </>}
         </section>
       </div>
@@ -808,7 +1127,7 @@ function LoginRequiredDialog({ onClose }: { onClose: () => void }) {
 }
 
 function ResumeLessonDialog({ lessonTitle, savedAt, confirmedCount, totalScore, onContinue, onRestart }: { lessonTitle: string; savedAt: string; confirmedCount: number; totalScore: number | null | undefined; onContinue: () => void; onRestart: () => void }) {
-  return <div role="presentation" className="dictation-modal-backdrop"><section role="dialog" aria-modal="true" aria-labelledby="resume-lesson-title" className="dictation-modal resume-lesson-modal"><div className="dictation-modal-icon" aria-hidden="true">↻</div><p className="dictation-modal-eyebrow">Đã tìm thấy tiến trình</p><h2 id="resume-lesson-title">Bạn muốn học tiếp thế nào?</h2><p className="dictation-modal-copy"><strong>{lessonTitle}</strong><br />Đã xác nhận {confirmedCount} câu{typeof totalScore === 'number' ? ` · Điểm tổng ${totalScore}/100` : ''}<br />Lưu lần cuối {new Date(savedAt).toLocaleString()}.</p><div className="dictation-modal-actions"><button type="button" onClick={onContinue} className="dictation-primary-button">Tiếp tục với tiến trình đã lưu</button><button type="button" onClick={onRestart} className="dictation-secondary-button">Làm lại từ đầu</button></div></section></div>;
+  return <div role="presentation" className="dictation-modal-backdrop"><section role="dialog" aria-modal="true" aria-labelledby="resume-lesson-title" className="dictation-modal resume-lesson-modal"><div className="dictation-modal-icon" aria-hidden="true">↻</div><p className="dictation-modal-eyebrow">Đã tìm thấy tiến trình</p><h2 id="resume-lesson-title">Bạn muốn học tiếp thế nào?</h2><p className="dictation-modal-copy"><strong>{lessonTitle}</strong><br />Đã chấm {confirmedCount} câu{typeof totalScore === 'number' ? ` · Điểm tổng ${totalScore}/100` : ''}<br />Lưu lần cuối {new Date(savedAt).toLocaleString()}.</p><div className="dictation-modal-actions"><button type="button" onClick={onContinue} className="dictation-primary-button">Tiếp tục với tiến trình đã lưu</button><button type="button" onClick={onRestart} className="dictation-secondary-button">Làm lại từ đầu</button></div></section></div>;
 }
 
 function PremiumRequiredDialog({ lessonTitle, onClose }: { lessonTitle: string; onClose: () => void }) {

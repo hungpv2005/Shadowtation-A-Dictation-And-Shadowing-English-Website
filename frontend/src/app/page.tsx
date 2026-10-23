@@ -14,16 +14,17 @@ export default function Home() {
           <h1 className="mt-4 max-w-2xl text-4xl font-black leading-tight md:text-5xl">Nghe rõ hơn. Nói tự tin hơn.</h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-indigo-100">Luyện nghe tiếng Anh theo từng câu, nhận phản hồi dễ hiểu và theo dõi tiến bộ trong một không gian học tập gọn gàng.</p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/practice/dictation" className="rounded-xl bg-white px-5 py-3 font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-50">Bắt đầu luyện nghe <span aria-hidden="true">→</span></Link>
+            <Link href="/practice/dictation?mode=dictation" className="rounded-xl bg-white px-5 py-3 font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-50">Dictation <span aria-hidden="true">→</span></Link>
+            <Link href="/practice/dictation?mode=shadowing" className="rounded-xl border border-white/40 px-5 py-3 font-semibold text-white transition hover:bg-white/10">Shadowing <span aria-hidden="true">→</span></Link>
             <Link href="#learning-features" className="rounded-xl border border-white/40 px-5 py-3 font-semibold text-white transition hover:bg-white/10">Khám phá chức năng</Link>
           </div>
         </div>
         <aside className="rounded-3xl border border-white/20 bg-white/10 p-6 backdrop-blur-sm md:p-7">
           <p className="text-sm font-bold uppercase tracking-wide text-indigo-100">Lộ trình bắt đầu</p>
           <ol className="mt-5 space-y-5">
-            <li className="flex gap-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white font-bold text-indigo-700">1</span><div><p className="font-bold">Chọn một bài nghe</p><p className="mt-1 text-sm leading-6 text-indigo-100">Lọc bài theo trình độ hoặc loại nội dung.</p></div></li>
-            <li className="flex gap-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white font-bold text-indigo-700">2</span><div><p className="font-bold">Nghe và tự viết lại</p><p className="mt-1 text-sm leading-6 text-indigo-100">Luyện từng câu, dùng gợi ý khi cần.</p></div></li>
-            <li className="flex gap-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white font-bold text-indigo-700">3</span><div><p className="font-bold">Xem kết quả, ôn từ khó</p><p className="mt-1 text-sm leading-6 text-indigo-100">Nhận biết chỗ đúng sai và quay lại luyện tập.</p></div></li>
+            <li className="flex gap-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white font-bold text-indigo-700">1</span><div><p className="font-bold">Chọn Dictation hoặc Shadowing</p><p className="mt-1 text-sm leading-6 text-indigo-100">Chọn chế độ tại danh sách bài học trước khi mở bài.</p></div></li>
+            <li className="flex gap-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white font-bold text-indigo-700">2</span><div><p className="font-bold">Chọn một bài nghe</p><p className="mt-1 text-sm leading-6 text-indigo-100">Lọc bài theo trình độ hoặc loại nội dung.</p></div></li>
+            <li className="flex gap-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white font-bold text-indigo-700">3</span><div><p className="font-bold">Xem phản hồi và ôn từ khó</p><p className="mt-1 text-sm leading-6 text-indigo-100">Đối chiếu phát âm từng từ, xem điểm AI và luyện lại khi cần.</p></div></li>
           </ol>
         </aside>
       </div>
@@ -46,8 +47,8 @@ export default function Home() {
     </section>
 
     <section className="mt-12 flex flex-col items-start justify-between gap-5 rounded-2xl border border-indigo-100 bg-indigo-50 p-6 md:flex-row md:items-center md:p-8">
-      <div><h2 className="text-xl font-bold">Mới bắt đầu học Dictation?</h2><p className="mt-1 text-slate-600">Chọn bài ngắn ở trình độ A1–A2 và luyện từng câu theo nhịp của bạn.</p></div>
-      <Link href="/practice/dictation" className="shrink-0 rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-700">Xem bài học có sẵn</Link>
+      <div><h2 className="text-xl font-bold">Chọn chế độ luyện tập</h2><p className="mt-1 text-slate-600">Cả Dictation và Shadowing đều dùng chung danh sách bài học.</p></div>
+      <div className="flex flex-wrap gap-3"><Link href="/practice/dictation?mode=dictation" className="shrink-0 rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-700">Dictation</Link><Link href="/practice/dictation?mode=shadowing" className="shrink-0 rounded-xl border border-indigo-200 bg-white px-5 py-3 font-bold text-indigo-700 hover:bg-indigo-50">Shadowing</Link></div>
     </section>
   </main>;
 }

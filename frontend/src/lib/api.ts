@@ -65,7 +65,8 @@ async function refreshAccessToken(): Promise<string | null> {
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const send = (tokenOverride?: string) => {
     const headers = new Headers(init.headers);
-    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    const isMultipart = typeof FormData !== 'undefined' && init.body instanceof FormData;
+    if (!headers.has('Content-Type') && !isMultipart) headers.set('Content-Type', 'application/json');
     if (typeof window !== 'undefined') {
       const token = tokenOverride ?? localStorage.getItem('access_token') ?? localStorage.getItem('accessToken');
       if (token) headers.set('Authorization', `Bearer ${token}`);

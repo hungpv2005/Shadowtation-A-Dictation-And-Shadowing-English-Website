@@ -12,7 +12,7 @@ export default function FeaturePage({ params }: { params: { slug: string } }) {
     <Link href="/" className="back-link">← Về trang chủ</Link>
     <section className="placeholder-panel"><span className={`feature-icon ${feature.id}`}>{feature.icon}</span><p className="eyebrow">{feature.id.toUpperCase()} · {feature.category.toUpperCase()}</p><h1>{feature.title}</h1><p className="placeholder-description">{feature.description}</p>
       {feature.available ? <p className="ready-message">Chức năng đã sẵn sàng để sử dụng.</p> : <div className="roadmap-note"><strong>Chức năng trong lộ trình</strong><p>Đây là điểm điều hướng dành cho chức năng này. Giao diện và nghiệp vụ sẽ được hoàn thiện theo từng use-case.</p></div>}
-      <div className="placeholder-actions"><Link className="button button-primary" href={feature.id === 'uc-10' ? '/subscription' : '/practice/dictation'}>{feature.id === 'uc-10' ? 'Xem các gói học' : 'Bắt đầu với Dictation'} <span aria-hidden="true">→</span></Link><Link className="button button-quiet" href="/">Khám phá chức năng khác</Link></div>
+      <div className="placeholder-actions"><Link className="button button-primary" href={feature.id === 'uc-10' ? '/subscription' : feature.id === 'uc-05' ? '/practice/shadowing/results' : '/practice/dictation'}>{feature.id === 'uc-10' ? 'Xem các gói học' : feature.id === 'uc-05' ? 'Xem kết quả phát âm AI' : 'Mở danh sách bài học'} <span aria-hidden="true">→</span></Link><Link className="button button-quiet" href="/">Khám phá chức năng khác</Link></div>
     </section>
   </main>;
 }

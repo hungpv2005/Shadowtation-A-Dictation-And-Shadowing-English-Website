@@ -96,6 +96,7 @@ export function MediaDictationPlayer({
   startTime,
   endTime,
   onSeekToTime,
+  onTimeUpdate,
 }: {
   mediaType: 'AUDIO' | 'VIDEO' | 'PODCAST';
   mediaUrl?: string | null;
@@ -103,6 +104,7 @@ export function MediaDictationPlayer({
   startTime: number;
   endTime: number;
   onSeekToTime?: (time: number) => number;
+  onTimeUpdate?: (time: number) => void;
 }) {
   const isVideo = mediaType === 'VIDEO';
   const videoId = isVideo ? getYouTubeId(mediaUrl ?? '') : '';
@@ -125,7 +127,9 @@ export function MediaDictationPlayer({
   const playingRef = useRef(false);
   const audioSeekRef = useRef<number | null>(null);
   const audioActionsRef = useRef<{ skip: (offset: number) => void; toggleMute: () => void }>({ skip: () => {}, toggleMute: () => {} });
+  const onTimeUpdateRef = useRef(onTimeUpdate);
 
+  onTimeUpdateRef.current = onTimeUpdate;
   rangeRef.current = { startTime, endTime };
   rateRef.current = playbackRate;
 
@@ -140,6 +144,7 @@ export function MediaDictationPlayer({
       return;
     }
     setCurrentTime(startTime);
+    onTimeUpdateRef.current?.(startTime);
     setIsPlaying(false);
     playingRef.current = false;
     if (audio) {
@@ -180,6 +185,7 @@ export function MediaDictationPlayer({
               try {
                 const time = player.getCurrentTime();
                 setCurrentTime(time);
+                onTimeUpdateRef.current?.(time);
                 setDuration(player.getDuration() || 0);
                 if (playingRef.current && time >= rangeRef.current.endTime) {
                   player.pauseVideo();
@@ -254,6 +260,7 @@ export function MediaDictationPlayer({
   function updateAudioState(audio: HTMLAudioElement) {
     if (!audio) return;
     setCurrentTime(audio.currentTime || startTime);
+    onTimeUpdateRef.current?.(audio.currentTime || startTime);
     if (audioSeekRef.current !== null && Math.abs(audio.currentTime - audioSeekRef.current) < 0.25) return;
     if (audio.currentTime >= endTime) {
       audio.pause();
@@ -318,6 +325,7 @@ export function MediaDictationPlayer({
   function seek(value: number, commit = false) {
     const bounded = Math.min(endTime, Math.max(startTime, value));
     setCurrentTime(bounded);
+    onTimeUpdateRef.current?.(bounded);
     if (isVideo) playerRef.current?.seekTo(bounded, commit);
     else if (audioRef.current) {
       try { audioRef.current.currentTime = bounded; } catch { /* Wait for the media metadata. */ }
@@ -377,7 +385,7 @@ export function MediaDictationPlayer({
   const playerCanPlay = isVideo ? playerReady && Boolean(playerRef.current) : Boolean(source);
 
   return (
-    <section className="media-dictation-player" aria-label="Trình phát bài luyện Dictation">
+    <section className="media-dictation-player" aria-label="Trình phát câu mẫu">
       {isVideo ? (
         <div className="media-player-video"><div key={retryVersion} ref={playerMountRef} />{!videoId && <p role="alert">URL YouTube của bài học không hợp lệ.</p>}</div>
       ) : <audio

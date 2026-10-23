@@ -227,6 +227,36 @@ export class DictationService {
     });
   }
 
+  async getHistory(userId: string) {
+    const attempts = await this.dataSource.getRepository(UserAttempt).createQueryBuilder('attempt')
+      .innerJoinAndSelect('attempt.sentence', 'sentence')
+      .innerJoinAndSelect('sentence.lesson', 'lesson')
+      .innerJoinAndSelect('attempt.score', 'score')
+      .where('attempt.userId = :userId AND attempt.type = :type AND attempt.status = :status AND attempt.isDiscarded = false', {
+        userId, type: 'DICTATION', status: 'COMPLETED',
+      })
+      .orderBy('attempt.createdAt', 'DESC')
+      .take(100)
+      .getMany();
+
+    return {
+      items: attempts.map((attempt) => ({
+        attemptId: attempt.id,
+        createdAt: attempt.createdAt,
+        lessonId: attempt.sentence.lessonId,
+        lessonTitle: attempt.sentence.lesson.title,
+        sentenceId: attempt.sentenceId,
+        sentenceText: attempt.sentence.textContent,
+        submittedText: attempt.textInput,
+        result: attempt.score ? {
+          overall_score: attempt.score.overallScore,
+          accuracy_score: attempt.score.accuracyScore,
+          words_score_detail: attempt.score.wordsScoreDetail,
+        } : null,
+      })),
+    };
+  }
+
   private async getUser(userId: string) {
     const user = await this.dataSource.getRepository(User).findOneBy({ id: userId });
     if (!user) throw new NotFoundException('Không tìm thấy tài khoản.');

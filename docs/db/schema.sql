@@ -83,15 +83,19 @@ CREATE TABLE user_attempts (
   type                  VARCHAR(20)  NOT NULL CHECK (type IN ('DICTATION','SHADOWING')),
   status                VARCHAR(20)  NOT NULL DEFAULT 'PENDING'
                         CHECK (status IN ('PENDING','PROCESSING','COMPLETED','FAILED')),
+  error_code            VARCHAR(40),
+  is_discarded           BOOLEAN      NOT NULL DEFAULT FALSE,
   used_transcript_hint  BOOLEAN      NOT NULL DEFAULT FALSE,
   created_at            TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_user_attempts_user_created ON user_attempts(user_id, created_at DESC);
 CREATE INDEX idx_user_attempts_status       ON user_attempts(status);
+CREATE INDEX idx_user_attempts_pending_shadowing ON user_attempts(status, created_at) WHERE type = 'SHADOWING' AND is_discarded = FALSE;
 
 CREATE TABLE scores (
   attempt_id         UUID PRIMARY KEY REFERENCES user_attempts(id) ON DELETE CASCADE,
   overall_score      INTEGER NOT NULL CHECK (overall_score BETWEEN 0 AND 100),
+  assessment_source  VARCHAR(20) NOT NULL DEFAULT 'LEGACY',
   accuracy_score     INTEGER NOT NULL CHECK (accuracy_score BETWEEN 0 AND 100),
   fluency_score      INTEGER CHECK (fluency_score BETWEEN 0 AND 100),
   completeness_score INTEGER CHECK (completeness_score BETWEEN 0 AND 100),

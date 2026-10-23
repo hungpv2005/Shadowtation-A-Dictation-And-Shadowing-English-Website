@@ -7,6 +7,7 @@ import { HealthController } from './health/health.controller';
 import { SpeechModule } from './speech/speech.module';
 import { DictationModule } from './practice/dictation/dictation.module';
 import { AuthModule } from './auth/auth.module';
+import { ShadowingModule } from './practice/shadowing/shadowing.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { AuthModule } from './auth/auth.module';
     }),
     SpeechModule,
     DictationModule,
+    ShadowingModule,
     AuthModule,
   ],
   controllers: [AppController, HealthController],

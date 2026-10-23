@@ -48,6 +48,12 @@ export class UserAttempt {
   @Column({ type: 'varchar', length: 20, default: 'PENDING' })
   status!: AttemptStatus;
 
+  @Column({ name: 'error_code', type: 'varchar', length: 40, nullable: true })
+  errorCode!: string | null;
+
+  @Column({ name: 'is_discarded', type: 'boolean', default: false })
+  isDiscarded!: boolean;
+
   @Column({ name: 'used_transcript_hint', type: 'boolean', default: false })
   usedTranscriptHint!: boolean;
 
