@@ -48,22 +48,31 @@ CREATE TABLE lessons (
   level           VARCHAR(20)  NOT NULL
                   CHECK (level IN ('BEGINNER','INTERMEDIATE','ADVANCED')),
   audio_url       VARCHAR(500) NOT NULL,
+  media_type      VARCHAR(20)  NOT NULL DEFAULT 'AUDIO'
+                  CHECK (media_type IN ('AUDIO','VIDEO','PODCAST')),
+  source_name     VARCHAR(150),
+  source_url      VARCHAR(500),
+  duration_seconds INTEGER,
+  created_by_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   is_premium_only BOOLEAN      NOT NULL DEFAULT FALSE,
   status          VARCHAR(20)  NOT NULL DEFAULT 'DRAFT'
                   CHECK (status IN ('DRAFT','PUBLISHED','ARCHIVED')),
   created_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_lessons_status_level ON lessons(status, level);
+CREATE INDEX idx_lessons_created_by_user ON lessons(created_by_user_id);
 
 CREATE TABLE lesson_sentences (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   lesson_id    UUID  NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+  order_index  INTEGER NOT NULL,
   start_time   REAL  NOT NULL,
   end_time     REAL  NOT NULL CHECK (end_time > start_time),
   text_content TEXT  NOT NULL,
   words_json   JSONB NOT NULL DEFAULT '[]'::jsonb
 );
 CREATE INDEX idx_lesson_sentences_lesson ON lesson_sentences(lesson_id, start_time);
+CREATE UNIQUE INDEX idx_lesson_sentences_order ON lesson_sentences(lesson_id, order_index);
 
 CREATE TABLE user_attempts (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -74,15 +83,19 @@ CREATE TABLE user_attempts (
   type                  VARCHAR(20)  NOT NULL CHECK (type IN ('DICTATION','SHADOWING')),
   status                VARCHAR(20)  NOT NULL DEFAULT 'PENDING'
                         CHECK (status IN ('PENDING','PROCESSING','COMPLETED','FAILED')),
+  error_code            VARCHAR(40),
+  is_discarded           BOOLEAN      NOT NULL DEFAULT FALSE,
   used_transcript_hint  BOOLEAN      NOT NULL DEFAULT FALSE,
   created_at            TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_user_attempts_user_created ON user_attempts(user_id, created_at DESC);
 CREATE INDEX idx_user_attempts_status       ON user_attempts(status);
+CREATE INDEX idx_user_attempts_pending_shadowing ON user_attempts(status, created_at) WHERE type = 'SHADOWING' AND is_discarded = FALSE;
 
 CREATE TABLE scores (
   attempt_id         UUID PRIMARY KEY REFERENCES user_attempts(id) ON DELETE CASCADE,
   overall_score      INTEGER NOT NULL CHECK (overall_score BETWEEN 0 AND 100),
+  assessment_source  VARCHAR(20) NOT NULL DEFAULT 'LEGACY',
   accuracy_score     INTEGER NOT NULL CHECK (accuracy_score BETWEEN 0 AND 100),
   fluency_score      INTEGER CHECK (fluency_score BETWEEN 0 AND 100),
   completeness_score INTEGER CHECK (completeness_score BETWEEN 0 AND 100),

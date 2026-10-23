@@ -18,12 +18,16 @@ export interface WordTiming {
 
 @Entity('lesson_sentences')
 @Index('idx_lesson_sentences_lesson', ['lessonId', 'startTime'])
+@Index('idx_lesson_sentences_order', ['lessonId', 'orderIndex'], { unique: true })
 export class LessonSentence {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column({ name: 'lesson_id', type: 'uuid' })
   lessonId!: string;
+
+  @Column({ name: 'order_index', type: 'integer' })
+  orderIndex!: number;
 
   @ManyToOne(() => Lesson, (lesson) => lesson.sentences, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'lesson_id' })

@@ -22,7 +22,7 @@ Modular Monolith (100% TypeScript) tích hợp module chấm điểm phát âm t
 | Thành phần | Công nghệ | Thư mục |
 |---|---|---|
 | Giao diện | Next.js 14 (App Router), TypeScript, Tailwind CSS, Zustand, wavesurfer.js | `frontend/` |
-| Core API & Speech | NestJS, TypeORM, Passport/JWT, Azure Speech SDK, fluent-ffmpeg | `backend-api/` |
+| Core API, Dictation & Speech | NestJS, TypeORM, Passport/JWT, youtube-transcript, Azure Speech SDK, fluent-ffmpeg | `backend-api/` |
 | Dữ liệu | PostgreSQL 15 (JSONB), Redis 7, S3/MinIO | — |
 | Thanh toán | VNPAY (sandbox), Stripe | — |
 
@@ -59,7 +59,7 @@ cp frontend/.env.example frontend/.env.local
 
 # 3. Chạy PostgreSQL và Redis (sẽ bổ sung docker-compose.yml ở Giai đoạn 1)
 
-# 4. Backend, Frontend, AI Worker: xem README trong từng thư mục (bổ sung sau)
+# 4. Backend và Frontend: xem hướng dẫn trong từng thư mục
 ```
 
 ## Quy ước làm việc với Git
@@ -79,7 +79,7 @@ cp frontend/.env.example frontend/.env.local
 | 3 | Xác thực và phân quyền (UC-01) |
 | 4 | Quản trị bài học (UC-08) |
 | 5 | Dictation (UC-02, UC-03) |
-| 6 | Shadowing và AI Worker (UC-04, UC-05) |
+| 6 | Shadowing và chấm phát âm AI (UC-04, UC-05) |
 | 7 | Dashboard, Streak, Review List (UC-06, UC-07) |
 | 8 | Thanh toán Premium (UC-10) |
 | 9 | Kiểm thử |

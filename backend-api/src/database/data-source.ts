@@ -9,9 +9,19 @@ config({ path: ['.env', '../.env'] });
  * DataSource dùng cho TypeORM CLI (migration:generate / migration:run) và seed.
  * Ứng dụng NestJS cấu hình kết nối riêng trong app.module.ts với cùng tham số.
  */
+const databaseUrl = process.env.DATABASE_URL;
+
 export default new DataSource({
   type: 'postgres',
-  url: process.env.DATABASE_URL,
+  ...(databaseUrl
+    ? { url: databaseUrl }
+    : {
+        host: process.env.DB_HOST ?? 'localhost',
+        port: Number(process.env.DB_PORT ?? 5432),
+        username: process.env.DB_USERNAME,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_DATABASE ?? 'shadowtation',
+      }),
   entities: [__dirname + '/entities/*.entity{.ts,.js}'],
   migrations: [__dirname + '/migrations/*{.ts,.js}'],
   uuidExtension: 'pgcrypto', // dùng gen_random_uuid() như SRS
