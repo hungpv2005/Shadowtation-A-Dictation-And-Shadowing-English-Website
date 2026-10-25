@@ -23,6 +23,8 @@ type ResultItem = {
   result: Assessment | null;
 };
 
+const VOCAB_STORAGE_KEY = 'shadowtation.vocab_review_items';
+
 const wordClass = {
   GREEN: 'shadowing-word-green',
   YELLOW: 'shadowing-word-yellow',
@@ -31,13 +33,34 @@ const wordClass = {
 
 export default function ShadowingResultsPage() {
   const [items, setItems] = useState<ResultItem[]>([]);
+  const [reviewCount, setReviewCount] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    apiFetch<{ items: ResultItem[] }>('/practice/shadowing/history')
-      .then((data) => setItems(data.items ?? []))
+    Promise.all([
+      apiFetch<{ items: ResultItem[] }>('/practice/shadowing/history').catch(() => ({ items: [] })),
+      apiFetch<{ count: number; items?: any[] }>('/users/review-list?source=SHADOWING').catch(() => null),
+    ])
+      .then(([historyData, reviewData]) => {
+        setItems(historyData?.items ?? []);
+        if (reviewData && typeof reviewData.count === 'number') {
+          setReviewCount(reviewData.count);
+        } else {
+          // Check localStorage sync with vocabulary review items
+          try {
+            const raw = localStorage.getItem(VOCAB_STORAGE_KEY);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                const shadWords = list.filter((i) => i.source === 'SHADOWING');
+                setReviewCount(shadWords.length);
+              }
+            }
+          } catch {}
+        }
+      })
       .catch((cause: Error) => setError(cause.message || 'Chưa tải được lịch sử chấm phát âm.'))
       .finally(() => setLoading(false));
   }, []);
@@ -47,57 +70,127 @@ export default function ShadowingResultsPage() {
     const realScored = scored.filter((item) => item.result!.assessment_source !== 'MOCK');
     const average = realScored.length
       ? Math.round(realScored.reduce((sum, item) => sum + item.result!.overall_score, 0) / realScored.length)
+      : scored.length
+      ? Math.round(scored.reduce((sum, item) => sum + item.result!.overall_score, 0) / scored.length)
       : 0;
-    const wordsToPractice = realScored.reduce((sum, item) => sum + item.result!.words_score_detail.filter((word) => word.color !== 'GREEN').length, 0);
-    return { count: scored.length, realCount: realScored.length, average, wordsToPractice };
-  }, [items]);
+    const historyWords = scored.reduce(
+      (sum, item) => sum + item.result!.words_score_detail.filter((word) => word.color !== 'GREEN').length,
+      0,
+    );
+    const finalWordsToPractice = reviewCount !== null ? reviewCount : historyWords;
+    return { count: scored.length, realCount: realScored.length, average, wordsToPractice: finalWordsToPractice };
+  }, [items, reviewCount]);
 
-  return <main className="shadowing-history-page">
-    <header className="shadowing-history-header">
-      <div>
-        <Link href="/practice/dictation?mode=shadowing" className="shadowing-history-back">← Quay lại</Link>
-        <p className="shadowing-eyebrow">UC-05 · KẾT QUẢ PHÁT ÂM AI</p>
-        <h1>Kết quả và tiến bộ phát âm</h1>
-        <p>Xem lại điểm từ các lượt Shadowing đã chấm và nhận diện những từ cần luyện thêm. Khi muốn thực hành, hãy chọn chế độ và bài học trong thư viện.</p>
-      </div>
-    </header>
+  return (
+    <main className="shadowing-history-page max-w-5xl mx-auto px-4 py-8">
+      <header className="shadowing-history-header mb-8">
+        <div>
+          <Link
+            href="/practice/dictation?mode=shadowing"
+            className="inline-flex items-center gap-2 rounded-xl border-2 border-slate-300 bg-white px-5 py-2.5 text-base font-bold text-slate-700 shadow-sm transition hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700 mb-6"
+          >
+            ← Quay lại danh sách bài
+          </Link>
+          <p className="text-base font-bold uppercase tracking-wider text-blue-600">Luyện nói (Shadowing)</p>
+          <h1 className="mt-2 text-3xl md:text-4xl font-extrabold text-slate-900">Kết quả và tiến bộ Luyện nói</h1>
+          <p className="mt-2 text-lg text-slate-600">Xem lại điểm từ các lượt Luyện nói đã chấm và nhận diện những từ cần luyện thêm để cải thiện phát âm.</p>
+        </div>
+      </header>
 
-    <section className="shadowing-history-stats" aria-label="Tóm tắt kết quả">
-      <article><span>Lượt đã chấm</span><strong>{summary.count}</strong></article>
-      <article><span>Điểm trung bình thực</span><strong>{summary.realCount ? `${summary.average}/100` : '—'}</strong></article>
-      <article><span>Từ cần luyện thêm</span><strong>{summary.wordsToPractice}</strong></article>
-    </section>
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8" aria-label="Tóm tắt kết quả">
+        <article className="rounded-2xl border-2 border-blue-200 bg-blue-50/60 p-6 shadow-sm">
+          <span className="block text-base font-bold text-slate-600 uppercase tracking-wide">Lượt đã chấm</span>
+          <strong className="mt-2 block text-4xl font-black text-blue-700">{summary.count}</strong>
+        </article>
+        <article className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/60 p-6 shadow-sm">
+          <span className="block text-base font-bold text-slate-600 uppercase tracking-wide">Điểm trung bình thực</span>
+          <strong className="mt-2 block text-4xl font-black text-emerald-700">{summary.count ? `${summary.average}/100` : '—'}</strong>
+        </article>
+        <article className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 p-6 shadow-sm">
+          <span className="block text-base font-bold text-slate-600 uppercase tracking-wide">Từ cần luyện thêm</span>
+          <strong className="mt-2 block text-4xl font-black text-amber-600">{summary.wordsToPractice}</strong>
+        </article>
+      </section>
 
-    {loading && <p className="shadowing-history-state">Đang tải kết quả đã chấm…</p>}
-    {error && <div role="alert" className="shadowing-history-state error">{error}<p><Link href="/features/uc-01">Đăng nhập lại</Link> hoặc thử tải lại trang.</p></div>}
-    {!loading && !error && !items.length && <section className="shadowing-history-empty">
-      <span aria-hidden="true">◎</span><h2>Chưa có kết quả phát âm</h2>
-      <p>Sau khi ghi âm và gửi chấm trong Shadowing, điểm tổng quan và phân tích từng từ sẽ được lưu tại đây.</p>
-    </section>}
+      {loading && <p className="text-center py-12 text-lg font-bold text-slate-500">Đang tải kết quả đã chấm…</p>}
+      {error && (
+        <div role="alert" className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-6 text-lg text-rose-700 mb-6">
+          <p className="font-bold">{error}</p>
+          <p className="mt-2 text-base text-rose-600">
+            <Link href="/features/uc-01" className="underline font-bold">Đăng nhập lại</Link> hoặc thử tải lại trang.
+          </p>
+        </div>
+      )}
+      {!loading && !error && !items.length && (
+        <section className="rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 p-12 text-center my-8">
+          <span aria-hidden="true" className="text-5xl">🎙️</span>
+          <h2 className="mt-4 text-2xl font-extrabold text-slate-800">Chưa có kết quả phát âm</h2>
+          <p className="mt-2 text-lg text-slate-600">Sau khi ghi âm và gửi chấm trong phần Luyện nói, điểm tổng quan và phân tích từng từ sẽ được lưu tại đây.</p>
+        </section>
+      )}
 
-    <section className="shadowing-history-list" aria-label="Lịch sử chấm phát âm">
-      {items.map((item) => {
-        const result = item.result;
-        const expanded = expandedId === item.attemptId;
-        return <article key={item.attemptId} className="shadowing-history-card">
-          <button type="button" className="shadowing-history-card-toggle" aria-expanded={expanded} onClick={() => setExpandedId(expanded ? null : item.attemptId)}>
-            <span className="shadowing-history-score">{result?.overall_score ?? '—'}<small>/100</small></span>
-            <span className="shadowing-history-main"><small>{item.lessonTitle} · {new Date(item.createdAt).toLocaleString()}{result?.assessment_source === 'MOCK' ? ' · GIẢ LẬP' : ''}</small><strong>{item.sentenceText}</strong></span>
-            <span className="shadowing-history-expand">{expanded ? 'Thu gọn' : 'Xem phân tích'}</span>
-          </button>
-          {expanded && result && <div className="shadowing-history-detail">
-            <div className="shadowing-history-metrics">{[
-              ['Độ chính xác', result.accuracy_score],
-              ['Độ trôi chảy', result.fluency_score],
-              ['Mức độ đầy đủ', result.completeness_score],
-            ].map(([label, score]) => <div key={label}><span>{label}</span><strong>{score}%</strong></div>)}</div>
-            <div className="shadowing-history-words"><div><strong>Phân tích từng từ</strong><span>Điểm thấp hơn cho biết từ nên được luyện lại.</span></div>
-              <div className="shadowing-scored-words">{result.words_score_detail.map((word, index) => <span key={`${index}-${word.word}`} className={wordClass[word.color] ?? wordClass.RED} title={`${word.accuracy_score}% · ${word.error_type}`}>{word.word}<small>{word.accuracy_score}</small></span>)}</div>
-            </div>
-            <p className="shadowing-history-practice-hint">Muốn luyện lại, mở danh sách bài học, chọn Shadowing và tìm bài trong “Bài đang luyện dở &amp; học gần đây”.</p>
-          </div>}
-        </article>;
-      })}
-    </section>
-  </main>;
+      <section className="flex flex-col gap-5" aria-label="Lịch sử chấm phát âm">
+        {items.map((item) => {
+          const result = item.result;
+          const expanded = expandedId === item.attemptId;
+          return (
+            <article key={item.attemptId} className="rounded-2xl border-2 border-slate-200 bg-white shadow-sm hover:shadow-md transition overflow-hidden">
+              <button
+                type="button"
+                className="w-full flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 text-left bg-white hover:bg-slate-50 transition"
+                aria-expanded={expanded}
+                onClick={() => setExpandedId(expanded ? null : item.attemptId)}
+              >
+                <div className="flex items-center gap-4">
+                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-xl font-black text-white shadow-sm">
+                    {result?.overall_score ?? '—'}
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-500">
+                      {item.lessonTitle} · {new Date(item.createdAt).toLocaleString('vi-VN')}
+                    </p>
+                    <p className="mt-1 text-lg md:text-xl font-bold text-slate-800">{item.sentenceText}</p>
+                  </div>
+                </div>
+                <span className="self-end md:self-center shrink-0 rounded-xl border-2 border-blue-200 bg-blue-50 px-4 py-2 text-base font-bold text-blue-700">
+                  {expanded ? 'Thu gọn' : 'Xem kết quả'}
+                </span>
+              </button>
+              {expanded && result && (
+                <div className="border-t-2 border-slate-100 bg-slate-50/70 p-6">
+                  <div className="mb-5 grid grid-cols-3 gap-4">
+                    {[
+                      ['Độ chính xác', result.accuracy_score],
+                      ['Độ trôi chảy', result.fluency_score],
+                      ['Mức độ đầy đủ', result.completeness_score],
+                    ].map(([label, score]) => (
+                      <div key={label} className="rounded-xl border border-slate-200 bg-white p-3 text-center">
+                        <span className="block text-sm font-semibold text-slate-500">{label}</span>
+                        <strong className="mt-1 block text-2xl font-black text-indigo-700">{score}%</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-slate-700 mb-2">Phân tích chi tiết từng từ:</p>
+                    <div className="flex flex-wrap gap-2.5">
+                      {result.words_score_detail.map((word, index) => (
+                        <span
+                          key={`${index}-${word.word}`}
+                          className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-base font-bold shadow-sm ${wordClass[word.color] ?? wordClass.RED}`}
+                          title={`${word.accuracy_score}% · ${word.error_type}`}
+                        >
+                          {word.word}
+                          <small className="opacity-80 text-xs font-semibold">{word.accuracy_score}</small>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </section>
+    </main>
+  );
 }

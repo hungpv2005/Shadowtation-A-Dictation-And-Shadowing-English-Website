@@ -250,8 +250,8 @@ export class ShadowingService implements OnModuleInit {
           wordsScoreDetail: words,
         }));
         await manager.getRepository(UserAttempt).update(attemptId, { status: 'COMPLETED', errorCode: null });
-        await this.upsertReviewWords(manager, current.userId, words);
-        if (assessment!.source !== 'MOCK') await this.recordStreak(manager, current.userId);
+        await this.upsertReviewWords(manager, current.userId, attemptId, words);
+        await this.recordStreak(manager, current.userId);
       });
     } catch (error) {
       this.logger.error(`Could not save Shadowing result ${attemptId}: ${String(error)}`);
@@ -334,17 +334,26 @@ export class ShadowingService implements OnModuleInit {
     return 'GREEN';
   }
 
-  private async upsertReviewWords(manager: EntityManager, userId: string, words: ScoredWord[]) {
-    const weakWords = new Set(words.filter((item) => item.color !== 'GREEN').map((item) => item.word.toLocaleLowerCase().replace(/[^\p{L}\p{N}']/gu, '')).filter(Boolean));
-    for (const word of weakWords) {
+  private async upsertReviewWords(manager: EntityManager, userId: string, attemptId: string, words: ScoredWord[]) {
+    const weakWords = new Map<string, ScoredWord>();
+    for (const item of words.filter((word) => word.color !== 'GREEN')) {
+      const word = item.word.toLocaleLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
+      if (word && !weakWords.has(word)) weakWords.set(word, item);
+    }
+    for (const [word, result] of weakWords) {
       await manager.query(
-        `INSERT INTO review_lists (id, user_id, weak_word, wrong_count, priority_score, added_at)
-         VALUES (gen_random_uuid(), $1, $2, 1, 1, NOW())
+        `INSERT INTO review_lists (id, user_id, weak_word, wrong_count, priority_score, added_at, source_type, accuracy_score, error_type, last_attempt_id)
+         VALUES (gen_random_uuid(), $1, $2, 1, 1, NOW(), 'SHADOWING', $3, $4, $5)
          ON CONFLICT (user_id, weak_word) DO UPDATE SET
            wrong_count = review_lists.wrong_count + 1,
            priority_score = review_lists.priority_score * EXP(-EXTRACT(EPOCH FROM (NOW() - review_lists.added_at)) / 2592000) + 1,
-           added_at = NOW()`,
-        [userId, word],
+           added_at = NOW(),
+           source_type = EXCLUDED.source_type,
+           accuracy_score = EXCLUDED.accuracy_score,
+           error_type = EXCLUDED.error_type,
+           last_attempt_id = EXCLUDED.last_attempt_id,
+           correct_streak = 0`,
+        [userId, word, result.accuracy_score, result.error_type, attemptId],
       );
     }
   }
@@ -354,7 +363,17 @@ export class ShadowingService implements OnModuleInit {
       `INSERT INTO streak_logs (id, user_id, study_date) VALUES (gen_random_uuid(), $1, CURRENT_DATE)
        ON CONFLICT (user_id, study_date) DO NOTHING RETURNING id`, [userId],
     );
-    if (!inserted.length) return;
+    if (!inserted.length) {
+      await manager.query(
+        'UPDATE streak_logs SET daily_points = daily_points + 1 WHERE user_id = $1 AND study_date = CURRENT_DATE',
+        [userId],
+      );
+      return;
+    }
+    await manager.query(
+      'UPDATE streak_logs SET daily_points = 1 WHERE user_id = $1 AND study_date = CURRENT_DATE',
+      [userId],
+    );
     const yesterday: Array<{ exists: boolean }> = await manager.query(
       `SELECT EXISTS (SELECT 1 FROM streak_logs WHERE user_id = $1 AND study_date = CURRENT_DATE - 1) AS exists`, [userId],
     );

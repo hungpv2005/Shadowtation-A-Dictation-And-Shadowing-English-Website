@@ -11,7 +11,7 @@ import { scoreDictation } from '../practice/dictation/dictation-scorer';
 export interface WordScoreDetail {
   word: string;
   accuracy_score: number;
-  error_type: 'None' | 'Mispronunciation' | 'Omission' | 'Insertion';
+  error_type: 'None' | 'Mispronunciation' | 'Substitution' | 'Omission' | 'Insertion';
 }
 
 export interface AssessmentResult {

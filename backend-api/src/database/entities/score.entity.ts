@@ -1,7 +1,7 @@
 import { Column, Entity, JoinColumn, OneToOne, PrimaryColumn } from 'typeorm';
 import { UserAttempt } from './user-attempt.entity';
 
-export type WordErrorType = 'None' | 'Mispronunciation' | 'Omission' | 'Insertion';
+export type WordErrorType = 'None' | 'Mispronunciation' | 'Substitution' | 'Omission' | 'Insertion';
 
 export interface WordScore {
   word: string;

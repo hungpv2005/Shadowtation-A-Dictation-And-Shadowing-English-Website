@@ -21,6 +21,7 @@ import {
   Sparkles,
   Flame,
   LogIn,
+  BookOpen,
 } from 'lucide-react';
 
 const navItems = [
@@ -39,6 +40,7 @@ const navItems = [
   },
   { href: '/practice/shadowing/results', label: 'Kết quả phát âm AI', icon: BarChart3 },
   { href: '/dashboard', label: 'Tiến độ học tập', icon: LayoutDashboard },
+  { href: '/features/uc-07', label: 'Sổ từ vựng cá nhân', icon: BookOpen },
   { href: '/subscription', label: 'Gói học Premium', icon: Crown },
 ];
 
@@ -116,7 +118,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ? 'shadowing'
           : 'dictation',
       );
-
     syncAuth();
     syncPracticeMode();
 

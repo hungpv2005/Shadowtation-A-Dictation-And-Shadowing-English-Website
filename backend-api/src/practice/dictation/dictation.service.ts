@@ -210,13 +210,20 @@ export class DictationService {
 
         for (const weakWord of result.reviewWords) {
           if (!weakWord) continue;
+          const wordResult = result.words.find((item) => item.word === weakWord && item.error_type !== 'None');
           await manager.query(
-            `INSERT INTO review_lists (id, user_id, weak_word, wrong_count, priority_score, added_at)
-             VALUES (gen_random_uuid(), $1, $2, 1, 1, NOW())
+            `INSERT INTO review_lists (id, user_id, weak_word, wrong_count, priority_score, added_at, source_type, accuracy_score, error_type, last_attempt_id)
+             VALUES (gen_random_uuid(), $1, $2, 1, 1, NOW(), 'DICTATION', $3, $4, $5)
              ON CONFLICT (user_id, weak_word) DO UPDATE
              SET wrong_count = review_lists.wrong_count + 1,
-                 priority_score = review_lists.priority_score + 1`,
-            [userId, weakWord.slice(0, 100)],
+                 priority_score = review_lists.priority_score * EXP(-EXTRACT(EPOCH FROM (NOW() - review_lists.added_at)) / 2592000) + 1,
+                 source_type = EXCLUDED.source_type,
+                 accuracy_score = EXCLUDED.accuracy_score,
+                 error_type = EXCLUDED.error_type,
+                 last_attempt_id = EXCLUDED.last_attempt_id,
+                 correct_streak = 0,
+                 added_at = NOW()`,
+            [userId, weakWord.slice(0, 100), wordResult?.accuracy_score ?? 0, wordResult?.error_type ?? 'Omission', attempt.id],
           );
         }
         results.push({ attemptId: attempt.id, sentenceId: sentence.id, accuracyScore: result.accuracy, wer: result.wer, diff: result.diff });
@@ -282,7 +289,17 @@ export class DictationService {
        ON CONFLICT (user_id, study_date) DO NOTHING
        RETURNING id`, [userId],
     );
-    if (!inserted.length) return;
+    if (!inserted.length) {
+      await manager.query(
+        'UPDATE streak_logs SET daily_points = daily_points + 1 WHERE user_id = $1 AND study_date = CURRENT_DATE',
+        [userId],
+      );
+      return;
+    }
+    await manager.query(
+      'UPDATE streak_logs SET daily_points = 1 WHERE user_id = $1 AND study_date = CURRENT_DATE',
+      [userId],
+    );
     const yesterday: Array<{ exists: boolean }> = await manager.query(
       `SELECT EXISTS (SELECT 1 FROM streak_logs WHERE user_id = $1 AND study_date = CURRENT_DATE - 1) AS exists`, [userId],
     );

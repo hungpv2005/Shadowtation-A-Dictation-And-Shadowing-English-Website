@@ -9,6 +9,9 @@ import {
   Unique,
 } from 'typeorm';
 import { User } from './user.entity';
+import { UserAttempt } from './user-attempt.entity';
+
+export type ReviewSource = 'DICTATION' | 'SHADOWING' | 'LEGACY';
 
 @Entity('review_lists')
 @Unique('uq_review_lists_user_word', ['userId', 'weakWord'])
@@ -29,6 +32,25 @@ export class ReviewList {
 
   @Column({ name: 'wrong_count', type: 'int', default: 1 })
   wrongCount!: number;
+
+  @Column({ name: 'source_type', type: 'varchar', length: 20, default: 'LEGACY' })
+  sourceType!: ReviewSource;
+
+  @Column({ name: 'accuracy_score', type: 'int', nullable: true })
+  accuracyScore!: number | null;
+
+  @Column({ name: 'error_type', type: 'varchar', length: 30, nullable: true })
+  errorType!: string | null;
+
+  @Column({ name: 'last_attempt_id', type: 'uuid', nullable: true })
+  lastAttemptId!: string | null;
+
+  @ManyToOne(() => UserAttempt, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'last_attempt_id' })
+  lastAttempt!: UserAttempt | null;
+
+  @Column({ name: 'correct_streak', type: 'int', default: 0 })
+  correctStreak!: number;
 
   @Column({ name: 'priority_score', type: 'real', default: 0 })
   priorityScore!: number;

@@ -106,6 +106,7 @@ CREATE TABLE streak_logs (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   study_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  daily_points INTEGER NOT NULL DEFAULT 0,
   CONSTRAINT uq_streak_logs_user_date UNIQUE (user_id, study_date)
 );
 
@@ -115,6 +116,11 @@ CREATE TABLE review_lists (
   weak_word      VARCHAR(100) NOT NULL,
   wrong_count    INTEGER      NOT NULL DEFAULT 1,
   priority_score REAL         NOT NULL DEFAULT 0,
+  source_type    VARCHAR(20)  NOT NULL DEFAULT 'LEGACY',
+  accuracy_score INTEGER,
+  error_type     VARCHAR(30),
+  last_attempt_id UUID REFERENCES user_attempts(id) ON DELETE SET NULL,
+  correct_streak INTEGER NOT NULL DEFAULT 0,
   added_at       TIMESTAMP    NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_review_lists_user_word UNIQUE (user_id, weak_word)
 );

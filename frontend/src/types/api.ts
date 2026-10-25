@@ -4,7 +4,7 @@
 export type UserRole = 'STUDENT' | 'PREMIUM_STUDENT' | 'ADMIN';
 export type LessonLevel = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
 export type AttemptStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
-export type WordErrorType = 'None' | 'Mispronunciation' | 'Omission' | 'Insertion';
+export type WordErrorType = 'None' | 'Mispronunciation' | 'Substitution' | 'Omission' | 'Insertion';
 
 export interface Lesson {
   id: string;
