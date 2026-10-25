@@ -16,12 +16,16 @@ function clearStoredSession() {
   localStorage.removeItem('accessToken');
   localStorage.removeItem('refresh_token');
   localStorage.removeItem('student_profile');
+  sessionStorage.removeItem('access_token');
+  sessionStorage.removeItem('accessToken');
+  sessionStorage.removeItem('refresh_token');
+  sessionStorage.removeItem('student_profile');
   window.dispatchEvent(new Event('shadowtation:auth-change'));
 }
 
 async function refreshAccessToken(): Promise<string | null> {
   if (refreshInFlight) return refreshInFlight;
-  const refreshToken = localStorage.getItem('refresh_token');
+  const refreshToken = localStorage.getItem('refresh_token') ?? sessionStorage.getItem('refresh_token');
   if (!refreshToken) return null;
 
   refreshInFlight = (async () => {
@@ -47,6 +51,8 @@ async function refreshAccessToken(): Promise<string | null> {
       if (!result.accessToken || !result.refreshToken) return null;
       localStorage.setItem('access_token', result.accessToken);
       localStorage.setItem('refresh_token', result.refreshToken);
+      sessionStorage.setItem('access_token', result.accessToken);
+      sessionStorage.setItem('refresh_token', result.refreshToken);
       window.dispatchEvent(new Event('shadowtation:auth-change'));
       return result.accessToken;
     } catch {
@@ -68,7 +74,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     const isMultipart = typeof FormData !== 'undefined' && init.body instanceof FormData;
     if (!headers.has('Content-Type') && !isMultipart) headers.set('Content-Type', 'application/json');
     if (typeof window !== 'undefined') {
-      const token = tokenOverride ?? localStorage.getItem('access_token') ?? localStorage.getItem('accessToken');
+      const token = tokenOverride ??
+        localStorage.getItem('access_token') ??
+        sessionStorage.getItem('access_token') ??
+        localStorage.getItem('accessToken') ??
+        sessionStorage.getItem('accessToken');
       if (token) headers.set('Authorization', `Bearer ${token}`);
     }
     return fetch(`${API_URL}${path}`, { ...init, headers, cache: 'no-store' });
@@ -76,11 +86,16 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   let res = await send();
   if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/')) {
-    const refreshToken = localStorage.getItem('refresh_token');
+    const refreshToken = localStorage.getItem('refresh_token') ?? sessionStorage.getItem('refresh_token');
     if (refreshToken) {
       const freshToken = await refreshAccessToken();
       if (freshToken) res = await send(freshToken);
-    } else if (localStorage.getItem('access_token') || localStorage.getItem('accessToken')) {
+    } else if (
+      localStorage.getItem('access_token') ||
+      sessionStorage.getItem('access_token') ||
+      localStorage.getItem('accessToken') ||
+      sessionStorage.getItem('accessToken')
+    ) {
       clearStoredSession();
     }
   }

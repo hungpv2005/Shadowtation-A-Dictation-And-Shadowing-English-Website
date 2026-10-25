@@ -42,7 +42,8 @@ const DEV_USERS: { email: string; fullName: string; role: UserRole; password: st
 
 const PLANS = [
   { name: 'Premium 1 Tháng', price: '199000', durationDays: 30 },
-  { name: 'Premium 1 Năm', price: '1990000', durationDays: 365 },
+  { name: 'Premium 3 Tháng', price: '499000', durationDays: 90 },
+  { name: 'Premium 1 Năm', price: '1490000', durationDays: 365 },
 ];
 
 const LESSONS = [

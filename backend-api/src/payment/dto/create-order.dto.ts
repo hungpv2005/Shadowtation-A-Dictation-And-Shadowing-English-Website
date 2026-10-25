@@ -3,18 +3,18 @@ import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateOrderDto {
   @ApiPropertyOptional({
-    example: 'b373e3d8-f89d-470a-b590-bb201e25bcdb',
-    description: 'Mã UUID của gói cước cần nâng cấp (từ bảng subscription_plans - camelCase)',
+    example: '71d2c4bc-790a-4434-a781-08dbae230708',
+    description: 'Mã UUID hoặc mã định danh của gói cước cần nâng cấp',
   })
-  @IsUUID('4', { message: 'planId phải là định dạng UUID v4 hợp lệ' })
+  @IsString({ message: 'planId phải là chuỗi hợp lệ' })
   @IsOptional()
   planId?: string;
 
   @ApiPropertyOptional({
-    example: 'b373e3d8-f89d-470a-b590-bb201e25bcdb',
-    description: 'Mã UUID của gói cước cần nâng cấp (snake_case theo đặc tả SRS)',
+    example: '71d2c4bc-790a-4434-a781-08dbae230708',
+    description: 'Mã UUID hoặc mã định danh của gói cước cần nâng cấp (snake_case)',
   })
-  @IsUUID('4', { message: 'plan_id phải là định dạng UUID v4 hợp lệ' })
+  @IsString({ message: 'plan_id phải là chuỗi hợp lệ' })
   @IsOptional()
   plan_id?: string;
 

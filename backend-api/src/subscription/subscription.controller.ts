@@ -4,7 +4,7 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionPlan } from '../database/entities';
 
 @ApiTags('subscription-plans')
-@Controller('subscription-plans')
+@Controller(['subscription-plans', 'subscription/plans'])
 export class SubscriptionController {
   constructor(private readonly subscriptionService: SubscriptionService) {}
 

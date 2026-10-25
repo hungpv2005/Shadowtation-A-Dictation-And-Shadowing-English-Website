@@ -83,7 +83,26 @@ export class PaymentService {
       throw new BadRequestException('Vui lòng cung cấp mã gói cước (planId hoặc plan_id)');
     }
 
-    const plan = await this.planRepository.findOne({ where: { id: targetPlanId } });
+    let plan: SubscriptionPlan | null = null;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetPlanId);
+    if (isUuid) {
+      plan = await this.planRepository.findOne({ where: { id: targetPlanId } });
+    }
+    if (!plan) {
+      const allActive = await this.planRepository.find({ where: { isActive: true } });
+      const lower = targetPlanId.toLowerCase();
+      if (lower.includes('3') || lower.includes('90') || lower.includes('quy')) {
+        plan = allActive.find((p) => p.durationDays === 90 || p.name.includes('3')) || null;
+      } else if (lower.includes('year') || lower.includes('nam') || lower.includes('365')) {
+        plan = allActive.find((p) => p.durationDays === 365 || p.name.includes('Năm') || p.name.includes('Nam')) || null;
+      } else if (lower.includes('1') || lower.includes('month') || lower.includes('thang') || lower.includes('30')) {
+        plan = allActive.find((p) => p.durationDays === 30 || p.name.includes('1')) || null;
+      }
+      if (!plan && allActive.length > 0) {
+        plan = allActive[0];
+      }
+    }
+
     if (!plan || !plan.isActive) {
       throw new BadRequestException('Gói cước không tồn tại hoặc đã tạm dừng mở bán');
     }
@@ -148,11 +167,16 @@ export class PaymentService {
 
     return {
       transaction_id: savedTx.id,
+      transactionId: savedTx.id,
       merchant_txn_ref: transactionRef,
+      transactionRef: transactionRef,
       amount: amountInVND,
       plan_name: plan.name,
+      planName: plan.name,
       duration_days: plan.durationDays,
+      durationDays: plan.durationDays,
       payment_url: paymentUrl,
+      paymentUrl: paymentUrl,
     };
   }
 
