@@ -22,6 +22,8 @@ import {
   Flame,
   LogIn,
   BookOpen,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 const navItems = [
@@ -60,6 +62,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Sidebar collapsible state
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Theme toggle state (light / dark)
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  useEffect(() => {
+    // Check initial theme from html class or localStorage
+    const isDark =
+      document.documentElement.classList.contains('dark') ||
+      localStorage.getItem('shadowtation_theme') === 'dark';
+    setTheme(isDark ? 'dark' : 'light');
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('shadowtation_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('shadowtation_theme', 'light');
+    }
+  };
 
   useEffect(() => {
     // Đọc trạng thái thu gọn đã lưu từ trước
@@ -173,7 +198,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (signedIn) {
       if (isExpanded) {
         return (
-          <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-3 shadow-sm transition">
+          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 p-3 shadow-sm transition">
             <div className="flex items-center gap-2.5">
               <div className="relative">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 text-xs font-bold text-white shadow-sm">
@@ -196,12 +221,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ) : null}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-extrabold text-slate-900">{displayName}</p>
-                <p className="truncate text-[10px] text-slate-500">{user?.email}</p>
+                <p className="truncate text-xs font-extrabold text-slate-900 dark:text-slate-100">{displayName}</p>
+                <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">{user?.email}</p>
               </div>
             </div>
 
-            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-slate-200/60 pt-2 text-[11px]">
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-slate-200/60 dark:border-slate-700/60 pt-2 text-[11px]">
               {isAdmin ? (
                 <div className="flex w-full items-center justify-between">
                   <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700">
@@ -280,9 +305,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Chưa đăng nhập (Hiển thị khối Đăng nhập / Đăng ký ở dưới cùng)
     if (isExpanded) {
       return (
-        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-3 text-center">
-          <p className="text-xs font-bold text-indigo-950">Tham gia học tập</p>
-          <p className="mt-0.5 text-[11px] text-slate-500">Đăng nhập để lưu tiến độ</p>
+        <div className="rounded-2xl border border-indigo-100 dark:border-indigo-950/80 bg-indigo-50/70 dark:bg-indigo-950/40 p-3 text-center">
+          <p className="text-xs font-bold text-indigo-950 dark:text-indigo-200">Tham gia học tập</p>
+          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Đăng nhập để lưu tiến độ</p>
           <div className="mt-2.5 flex flex-col gap-1.5">
             <Link
               href="/login"
@@ -294,7 +319,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               href="/register"
               onClick={() => isDrawer && setMobileOpen(false)}
-              className="rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 text-center transition"
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-center transition"
             >
               Đăng ký miễn phí
             </Link>
@@ -307,7 +332,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="my-1.5 flex justify-center px-1">
         <Link
           href="/login"
-          className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
+          className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition"
           title="Đăng nhập tài khoản"
         >
           <LogIn className="h-5 w-5" />
@@ -342,13 +367,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               className={`group relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-bold transition ${
                 active
                   ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
               } ${!isExpanded ? 'justify-center px-2' : ''}`}
               title={!isExpanded ? item.label : undefined}
             >
               <Icon
                 className={`h-4 w-4 shrink-0 ${
-                  active ? 'text-white' : 'text-slate-500 group-hover:text-indigo-600'
+                  active ? 'text-white' : 'text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
                 }`}
               />
               {isExpanded && <span className="truncate">{item.label}</span>}
@@ -368,10 +393,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* ================= DESKTOP COLLAPSIBLE SIDEBAR ================= */}
       <aside
-        className={`hidden md:flex flex-col justify-between fixed left-0 top-0 bottom-0 z-40 bg-white border-r border-slate-200/90 shadow-sm transition-all duration-300 ${
+        className={`hidden md:flex flex-col justify-between fixed left-0 top-0 bottom-0 z-40 bg-white dark:bg-slate-900 border-r border-slate-200/90 dark:border-slate-800 shadow-sm transition-all duration-300 ${
           collapsed ? 'w-[76px]' : 'w-64'
         }`}
       >
@@ -379,7 +404,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col flex-1 min-h-0">
           {/* Header Brand & Collapse Toggle */}
           <div
-            className={`flex h-16 shrink-0 items-center border-b border-slate-100 px-4 ${
+            className={`flex h-16 shrink-0 items-center border-b border-slate-100 dark:border-slate-800 px-4 ${
               collapsed ? 'justify-center' : 'justify-between'
             }`}
           >
@@ -387,14 +412,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <>
                 <Link href="/" className="brand flex items-center gap-2.5">
                   <span className="brand-mark">S</span>
-                  <span className="font-extrabold text-base tracking-tight text-slate-800">
-                    shadow<span className="text-indigo-600">tation</span>
+                  <span className="font-extrabold text-base tracking-tight text-slate-800 dark:text-white">
+                    shadow<span className="text-indigo-600 dark:text-indigo-400">tation</span>
                   </span>
                 </Link>
                 <button
                   type="button"
                   onClick={toggleCollapse}
-                  className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                  className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition"
                   title="Thu gọn thanh bên"
                   aria-label="Thu gọn thanh bên"
                 >
@@ -409,7 +434,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={toggleCollapse}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition"
                   title="Mở rộng thanh bên"
                   aria-label="Mở rộng thanh bên"
                 >
@@ -425,8 +450,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Bottom Section (Footer): Phần Đăng nhập / User Profile chuyển xuống đây! */}
-        <div className="border-t border-slate-100 p-2 space-y-1.5 shrink-0 bg-white">
+        {/* Bottom Section (Footer): Dark Mode Toggle + User Profile */}
+        <div className="border-t border-slate-100 dark:border-slate-800 p-2 space-y-1.5 shrink-0 bg-white dark:bg-slate-900">
+          {/* Nút chuyển đổi giao diện Sáng / Tối */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className={`flex items-center gap-2.5 w-full rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition ${
+              collapsed ? 'justify-center px-2' : 'justify-between'
+            }`}
+            title={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+            aria-label="Chuyển chế độ sáng/tối"
+          >
+            {collapsed ? (
+              theme === 'dark' ? (
+                <Sun className="h-4 w-4 text-amber-400" />
+              ) : (
+                <Moon className="h-4 w-4 text-indigo-500" />
+              )
+            ) : (
+              <>
+                <div className="flex items-center gap-2.5">
+                  {theme === 'dark' ? (
+                    <Sun className="h-4 w-4 text-amber-400" />
+                  ) : (
+                    <Moon className="h-4 w-4 text-indigo-500" />
+                  )}
+                  <span>{theme === 'dark' ? 'Giao diện tối' : 'Giao diện sáng'}</span>
+                </div>
+                <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                  {theme === 'dark' ? 'Tối' : 'Sáng'}
+                </span>
+              </>
+            )}
+          </button>
+
           {/* Khối User Profile hoặc Đăng nhập theo yêu cầu người dùng */}
           {renderUserProfile(false)}
 
@@ -434,7 +492,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={signOut}
-              className={`group relative flex items-center gap-3 w-full rounded-xl px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition ${
+              className={`group relative flex items-center gap-3 w-full rounded-xl px-3.5 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition ${
                 collapsed ? 'justify-center px-2' : ''
               }`}
               title={collapsed ? 'Đăng xuất' : undefined}
@@ -452,7 +510,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={toggleCollapse}
-            className={`flex items-center gap-2.5 w-full rounded-xl px-3.5 py-2 text-xs font-medium text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition ${
+            className={`flex items-center gap-2.5 w-full rounded-xl px-3.5 py-2 text-xs font-medium text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition ${
               collapsed ? 'justify-center px-2' : ''
             }`}
             title={collapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên'}
@@ -470,38 +528,55 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ================= MOBILE TOPBAR ================= */}
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur-md md:hidden">
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 px-4 backdrop-blur-md md:hidden">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
+            className="rounded-xl border border-slate-200 dark:border-slate-700 p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
             aria-label="Mở menu điều hướng"
           >
             <Menu className="h-5 w-5" />
           </button>
           <Link href="/" className="brand flex items-center gap-2">
             <span className="brand-mark h-7 w-7 text-xs">S</span>
-            <span className="font-extrabold text-sm tracking-tight text-slate-800">
-              shadow<span className="text-indigo-600">tation</span>
+            <span className="font-extrabold text-sm tracking-tight text-slate-800 dark:text-white">
+              shadow<span className="text-indigo-600 dark:text-indigo-400">tation</span>
             </span>
           </Link>
         </div>
 
-        {signedIn ? (
-          <div className="flex items-center gap-2">
-            <span className="grid h-7 w-7 place-items-center rounded-full bg-indigo-600 text-[11px] font-bold text-white shadow-sm">
-              {initials}
-            </span>
-          </div>
-        ) : (
-          <Link
-            href="/login"
-            className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+        <div className="flex items-center gap-2">
+          {/* Nút chuyển đổi giao diện trên Mobile Topbar */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="rounded-xl border border-slate-200 dark:border-slate-700 p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+            title={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+            aria-label="Chuyển chế độ sáng/tối"
           >
-            Đăng nhập
-          </Link>
-        )}
+            {theme === 'dark' ? (
+              <Sun className="h-4 w-4 text-amber-400" />
+            ) : (
+              <Moon className="h-4 w-4 text-indigo-500" />
+            )}
+          </button>
+
+          {signedIn ? (
+            <div className="flex items-center gap-2">
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-indigo-600 text-[11px] font-bold text-white shadow-sm">
+                {initials}
+              </span>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+            >
+              Đăng nhập
+            </Link>
+          )}
+        </div>
       </header>
 
       {/* ================= MOBILE DRAWER ================= */}
@@ -511,24 +586,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm md:hidden animate-in fade-in duration-200"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="fixed inset-y-0 left-0 z-50 w-72 bg-white shadow-2xl flex flex-col justify-between md:hidden animate-in slide-in-from-left duration-200">
+          <div className="fixed inset-y-0 left-0 z-50 w-72 bg-white dark:bg-slate-900 shadow-2xl flex flex-col justify-between md:hidden animate-in slide-in-from-left duration-200">
             {/* Top + Middle */}
             <div className="flex flex-col flex-1 min-h-0">
-              <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 px-4">
+              <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 dark:border-slate-800 px-4">
                 <Link
                   href="/"
                   onClick={() => setMobileOpen(false)}
                   className="brand flex items-center gap-2.5"
                 >
                   <span className="brand-mark">S</span>
-                  <span className="font-extrabold text-base tracking-tight text-slate-800">
-                    shadow<span className="text-indigo-600">tation</span>
+                  <span className="font-extrabold text-base tracking-tight text-slate-800 dark:text-white">
+                    shadow<span className="text-indigo-600 dark:text-indigo-400">tation</span>
                   </span>
                 </Link>
                 <button
                   type="button"
                   onClick={() => setMobileOpen(false)}
-                  className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100"
+                  className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -541,14 +616,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Bottom */}
-            <div className="border-t border-slate-100 p-3 space-y-2 shrink-0 bg-white">
+            <div className="border-t border-slate-100 dark:border-slate-800 p-3 space-y-2 shrink-0 bg-white dark:bg-slate-900">
+              {/* Nút chuyển đổi giao diện trong Mobile Drawer */}
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="flex items-center justify-between w-full rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition"
+              >
+                <div className="flex items-center gap-2.5">
+                  {theme === 'dark' ? (
+                    <Sun className="h-4 w-4 text-amber-400" />
+                  ) : (
+                    <Moon className="h-4 w-4 text-indigo-500" />
+                  )}
+                  <span>{theme === 'dark' ? 'Chế độ nền tối' : 'Chế độ nền sáng'}</span>
+                </div>
+                <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                  {theme === 'dark' ? 'Tối' : 'Sáng'}
+                </span>
+              </button>
+
               {renderUserProfile(true)}
 
               {signedIn && (
                 <button
                   type="button"
                   onClick={signOut}
-                  className="flex items-center gap-3 w-full rounded-xl px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                  className="flex items-center gap-3 w-full rounded-xl px-3.5 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                 >
                   <LogOut className="h-4 w-4" />
                   <span>Đăng xuất</span>
