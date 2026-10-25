@@ -1,7 +1,7 @@
 # Thiết kế UC-02 và UC-03: Luyện tập Dictation
 
 **Phạm vi:** Học viên luyện nghe chép chính tả và sử dụng gợi ý trong Module Dictation.  
-**Cơ sở dữ liệu:** `lessons`, `lesson_sentences`, `user_attempts`, `scores`, `review_lists`, `system_configs` hiện có. Tài liệu này không yêu cầu thay đổi schema.
+**Cơ sở dữ liệu:** `lessons`, `lesson_sentences`, `user_attempts`, `scores`, `review_lists`, `system_configs`. Riêng việc ghi nguồn/điểm gần nhất của từ ôn và tiến độ micro-lesson được đặc tả tại [UC-06/07](UC-06-07-dashboard-review.md).
 
 ## 1. Mục tiêu và phạm vi
 

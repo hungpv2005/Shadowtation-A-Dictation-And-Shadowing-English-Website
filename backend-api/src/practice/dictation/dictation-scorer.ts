@@ -43,7 +43,7 @@ export function scoreDictation(referenceText: string, submittedText: string, pen
   const words: WordScore[] = diff.map((item) => ({
     word: item.reference || item.submitted,
     accuracy_score: item.operation === 'MATCH' ? 100 : 0,
-    error_type: ({ MATCH: 'None', SUBSTITUTION: 'Mispronunciation', OMISSION: 'Omission', INSERTION: 'Insertion' } as Record<DiffOperation, WordErrorType>)[item.operation],
+    error_type: ({ MATCH: 'None', SUBSTITUTION: 'Substitution', OMISSION: 'Omission', INSERTION: 'Insertion' } as Record<DiffOperation, WordErrorType>)[item.operation],
   }));
   return { wer, accuracy: Math.max(0, rawAccuracy - penalty), errors, words, diff, reviewWords: [...new Set(diff.filter((x) => x.operation === 'SUBSTITUTION' || x.operation === 'OMISSION').map((x) => x.reference))] };
 }

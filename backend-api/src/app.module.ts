@@ -8,6 +8,7 @@ import { SpeechModule } from './speech/speech.module';
 import { DictationModule } from './practice/dictation/dictation.module';
 import { AuthModule } from './auth/auth.module';
 import { ShadowingModule } from './practice/shadowing/shadowing.module';
+import { LearningModule } from './learning/learning.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ShadowingModule } from './practice/shadowing/shadowing.module';
     SpeechModule,
     DictationModule,
     ShadowingModule,
+    LearningModule,
     AuthModule,
   ],
   controllers: [AppController, HealthController],

@@ -16,4 +16,7 @@ export class StreakLog {
 
   @Column({ name: 'study_date', type: 'date', default: () => 'CURRENT_DATE' })
   studyDate!: string;
+
+  @Column({ name: 'daily_points', type: 'int', default: 0 })
+  dailyPoints!: number;
 }
