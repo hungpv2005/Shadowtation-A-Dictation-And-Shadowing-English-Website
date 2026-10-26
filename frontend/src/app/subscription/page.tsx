@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAuthStore, UserProfile } from '@/lib/auth-store';
+import { useLanguage } from '@/lib/i18n';
 import {
   Crown,
   Check,
@@ -95,6 +96,7 @@ const DEFAULT_PLANS: SubscriptionPlan[] = [
 
 export default function SubscriptionPage() {
   const router = useRouter();
+  const { lang } = useLanguage();
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const updateUser = useAuthStore((state) => state.updateUser);
@@ -247,7 +249,7 @@ export default function SubscriptionPage() {
           href="/"
           className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-600 hover:text-indigo-700"
         >
-          <span>←</span> Quay lại trang chủ
+          <span>←</span> {lang === 'en' ? 'Back to home' : 'Quay lại trang chủ'}
         </Link>
         <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-amber-200/80 bg-amber-50 px-3.5 py-1 text-xs font-bold text-amber-800">
           <Crown className="h-3.5 w-3.5 text-amber-600" />

@@ -97,6 +97,7 @@ export function MediaDictationPlayer({
   endTime,
   onSeekToTime,
   onTimeUpdate,
+  disableArrowSeek = false,
 }: {
   mediaType: 'AUDIO' | 'VIDEO' | 'PODCAST';
   mediaUrl?: string | null;
@@ -105,6 +106,7 @@ export function MediaDictationPlayer({
   endTime: number;
   onSeekToTime?: (time: number) => number;
   onTimeUpdate?: (time: number) => void;
+  disableArrowSeek?: boolean;
 }) {
   const isVideo = mediaType === 'VIDEO';
   const videoId = isVideo ? getYouTubeId(mediaUrl ?? '') : '';
@@ -240,7 +242,7 @@ export function MediaDictationPlayer({
   }, [playbackRate, isMuted, isVideo]);
 
   useEffect(() => {
-    if (isVideo) return;
+    if (isVideo || disableArrowSeek) return;
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.repeat) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
@@ -255,7 +257,7 @@ export function MediaDictationPlayer({
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [isVideo]);
+  }, [isVideo, disableArrowSeek]);
 
   function updateAudioState(audio: HTMLAudioElement) {
     if (!audio) return;

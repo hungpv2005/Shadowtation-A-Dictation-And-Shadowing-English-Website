@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { apiFetch } from '@/lib/api';
 import { addWordToPersonalDictionary } from '@/app/review-list-page';
+import { useLanguage } from '@/lib/i18n';
 
 export type VocabItem = {
   id: string;
@@ -76,6 +77,7 @@ export function VocabularyReviewSection({
   onBackToLibrary: () => void;
   onToast: (msg: string) => void;
 }) {
+  const { lang } = useLanguage();
   const [items, setItems] = useState<VocabItem[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'DICTATION' | 'SHADOWING'>('ALL');
   const [search, setSearch] = useState('');
@@ -429,22 +431,27 @@ export function VocabularyReviewSection({
           onClick={onBackToLibrary}
           className="inline-flex items-center gap-2 rounded-xl border-2 border-slate-300 bg-white px-5 py-2.5 text-base font-bold text-slate-700 shadow-sm transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
         >
-          <span aria-hidden="true" className="text-lg">←</span> Quay lại danh sách bài {practiceMode === 'SHADOWING' ? 'Luyện nói' : 'Luyện nghe'}
+          <span aria-hidden="true" className="text-lg">←</span>{' '}
+          {lang === 'en'
+            ? `Back to ${practiceMode === 'SHADOWING' ? 'Speaking' : 'Listening'} lessons`
+            : `Quay lại danh sách bài ${practiceMode === 'SHADOWING' ? 'Luyện nói' : 'Luyện nghe'}`}
         </button>
 
         <span className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-800">
-          Chế độ ôn tập: {practiceMode === 'SHADOWING' ? 'Luyện nói (Phát âm)' : 'Luyện nghe (Gõ từ)'}
+          {lang === 'en'
+            ? `Review mode: ${practiceMode === 'SHADOWING' ? 'Speaking (Pronunciation)' : 'Listening (Dictation)'}`
+            : `Chế độ ôn tập: ${practiceMode === 'SHADOWING' ? 'Luyện nói (Phát âm)' : 'Luyện nghe (Gõ từ)'}`}
         </span>
       </div>
 
       <header className="mb-8">
         <h1 className="text-3xl font-black text-slate-900 md:text-4xl">
-          Danh sách từ vựng ôn tập
+          {lang === 'en' ? 'Vocabulary Review List' : 'Danh sách từ vựng ôn tập'}
         </h1>
         <p className="mt-2 text-base text-slate-600">
           {practiceMode === 'SHADOWING'
-            ? 'Nghe lại từ vựng và luyện ghi âm phát âm chuẩn xác theo từng câu mẫu.'
-            : 'Nghe lại từ phát âm và chép lại đúng từ vừa nghe để củng cố phản xạ.'}
+            ? (lang === 'en' ? 'Listen to vocabulary and record your pronunciation matching native samples.' : 'Nghe lại từ vựng và luyện ghi âm phát âm chuẩn xác theo từng câu mẫu.')
+            : (lang === 'en' ? 'Listen to spoken words and transcribe them to sharpen your reflexes.' : 'Nghe lại từ phát âm và chép lại đúng từ vừa nghe để củng cố phản xạ.')}
         </p>
       </header>
 
@@ -452,7 +459,9 @@ export function VocabularyReviewSection({
       <section className="mb-7 grid gap-4 sm:grid-cols-3" aria-label="Thống kê từ vựng ôn tập">
         <article className="rounded-2xl border-2 border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300 transition flex items-center justify-between">
           <div>
-            <span className="text-sm font-bold text-slate-500">Tất cả từ cần ôn</span>
+            <span className="text-sm font-bold text-slate-500">
+              {lang === 'en' ? 'All review words' : 'Tất cả từ cần ôn'}
+            </span>
             <strong className="mt-2 block text-3xl font-black text-slate-900">{totalCount}</strong>
           </div>
           <span className="grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-2xl font-bold text-blue-600">
@@ -462,7 +471,9 @@ export function VocabularyReviewSection({
 
         <article className="rounded-2xl border-2 border-sky-200 bg-white p-5 shadow-sm hover:border-sky-300 transition flex items-center justify-between">
           <div>
-            <span className="text-sm font-bold text-sky-800">Tất cả từ trong Luyện nghe</span>
+            <span className="text-sm font-bold text-sky-800">
+              {lang === 'en' ? 'All words from Listening' : 'Tất cả từ trong Luyện nghe'}
+            </span>
             <strong className="mt-2 block text-3xl font-black text-sky-700">{dictationCount}</strong>
           </div>
           <span className="grid h-12 w-12 place-items-center rounded-xl bg-sky-50 text-2xl font-bold text-sky-600">
@@ -472,7 +483,9 @@ export function VocabularyReviewSection({
 
         <article className="rounded-2xl border-2 border-violet-200 bg-white p-5 shadow-sm hover:border-violet-300 transition flex items-center justify-between">
           <div>
-            <span className="text-sm font-bold text-violet-800">Tất cả từ trong Luyện nói</span>
+            <span className="text-sm font-bold text-violet-800">
+              {lang === 'en' ? 'All words from Speaking' : 'Tất cả từ trong Luyện nói'}
+            </span>
             <strong className="mt-2 block text-3xl font-black text-violet-700">{shadowingCount}</strong>
           </div>
           <span className="grid h-12 w-12 place-items-center rounded-xl bg-violet-50 text-2xl font-bold text-violet-600">
@@ -489,9 +502,9 @@ export function VocabularyReviewSection({
             {/* Bộ lọc: Tất cả, Luyện nghe, Luyện nói */}
             <div className="flex flex-wrap items-center gap-2">
               {[
-                { value: 'ALL', label: 'Tất cả' },
-                { value: 'DICTATION', label: 'Luyện nghe' },
-                { value: 'SHADOWING', label: 'Luyện nói' },
+                { value: 'ALL', label: lang === 'en' ? 'All' : 'Tất cả' },
+                { value: 'DICTATION', label: lang === 'en' ? 'Listening' : 'Luyện nghe' },
+                { value: 'SHADOWING', label: lang === 'en' ? 'Speaking' : 'Luyện nói' },
               ].map((tab) => (
                 <button
                   key={tab.value}
@@ -515,7 +528,7 @@ export function VocabularyReviewSection({
             <div className="mt-3">
               <input
                 type="text"
-                placeholder="Tìm từ ôn tập..."
+                placeholder={lang === 'en' ? 'Search vocabulary...' : 'Tìm từ ôn tập...'}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-xl border-2 border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
@@ -525,26 +538,26 @@ export function VocabularyReviewSection({
             {/* Tiêu đề danh sách, số từ & Nút con mắt ẩn/hiện tất cả */}
             <div className="mt-4 flex items-center justify-between border-b border-slate-100 pb-2">
               <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-                {filteredItems.length} từ hiển thị
+                {filteredItems.length} {lang === 'en' ? 'words showing' : 'từ hiển thị'}
               </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={toggleBlurAll}
-                  title={allBlurred ? 'Hiện tất cả từ' : 'Làm mờ tất cả từ'}
+                  title={allBlurred ? (lang === 'en' ? 'Show all words' : 'Hiện tất cả từ') : (lang === 'en' ? 'Blur all words' : 'Làm mờ tất cả từ')}
                   className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition"
                 >
                   <span>{allBlurred ? '👁️' : '👁️‍🗨️'}</span>
-                  <span>{allBlurred ? 'Hiện tất cả' : 'Ẩn tất cả'}</span>
+                  <span>{allBlurred ? (lang === 'en' ? 'Show all' : 'Hiện tất cả') : (lang === 'en' ? 'Blur all' : 'Ẩn tất cả')}</span>
                 </button>
                 {items.length > 0 && (
                   <button
                     type="button"
                     onClick={handleDeleteAll}
-                    title="Xóa tất cả từ trong danh sách"
+                    title={lang === 'en' ? 'Delete all words in list' : 'Xóa tất cả từ trong danh sách'}
                     className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition text-xs"
                   >
-                    🗑️ Xóa tất cả
+                    🗑️ {lang === 'en' ? 'Clear all' : 'Xóa tất cả'}
                   </button>
                 )}
               </div>
@@ -784,14 +797,15 @@ export function VocabularyReviewSection({
             </div>
           )}
 
-          {/* Hai nút điều khiển: "Làm lại" và "Câu tiếp theo" */}
+          {/* Hai nút điều khiển: "Từ trước" và "Từ tiếp theo" */}
           <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 pt-5">
             <button
               type="button"
               onClick={handlePrevWord}
-              className="rounded-xl border-2 border-slate-200 bg-slate-50 px-5 py-2.5 text-base font-bold text-slate-700 hover:bg-slate-100 transition"
+              disabled={currentIndex === 0}
+              className="rounded-xl border-2 border-slate-200 bg-slate-50 px-5 py-2.5 text-base font-bold text-slate-700 hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              ← Câu trước
+              {lang === 'en' ? '← Previous word' : '← Từ trước'}
             </button>
 
             <div className="flex items-center gap-3">
@@ -800,7 +814,7 @@ export function VocabularyReviewSection({
                 onClick={handleRetry}
                 className="rounded-xl border-2 border-slate-300 bg-white px-5 py-2.5 text-base font-bold text-slate-700 shadow-sm hover:border-blue-300 hover:bg-blue-50 transition"
               >
-                ↻ Làm lại
+                {lang === 'en' ? '↻ Retry' : '↻ Làm lại'}
               </button>
 
               <button
@@ -808,7 +822,7 @@ export function VocabularyReviewSection({
                 onClick={handleNextWord}
                 className="rounded-xl bg-blue-600 px-6 py-2.5 text-base font-bold text-white shadow-md hover:bg-blue-700 transition"
               >
-                Câu tiếp theo →
+                {lang === 'en' ? 'Next word →' : 'Từ tiếp theo →'}
               </button>
             </div>
           </div>

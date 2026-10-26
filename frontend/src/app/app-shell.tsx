@@ -5,6 +5,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore, UserProfile } from '@/lib/auth-store';
+import { AiTutorBot } from './components/ai-tutor-bot';
+import { useLanguage, FlagVN, FlagUK } from '@/lib/i18n';
 import {
   Home,
   Headphones,
@@ -24,31 +26,35 @@ import {
   BookOpen,
   Sun,
   Moon,
+  Globe,
 } from 'lucide-react';
 
 const navItems = [
-  { href: '/', label: 'Trang chủ', icon: Home },
+  { href: '/', label: 'Trang chủ', enLabel: 'Home', icon: Home },
   {
     href: '/practice/dictation?mode=dictation',
     label: 'Luyện nghe Dictation',
+    enLabel: 'Dictation',
     icon: Headphones,
     mode: 'dictation',
   },
   {
     href: '/practice/dictation?mode=shadowing',
     label: 'Luyện nói Shadowing',
+    enLabel: 'Shadowing',
     icon: Mic,
     mode: 'shadowing',
   },
-  { href: '/practice/shadowing/results', label: 'Kết quả phát âm AI', icon: BarChart3 },
-  { href: '/dashboard', label: 'Tiến độ học tập', icon: LayoutDashboard },
-  { href: '/vocabulary', label: 'Sổ từ vựng cá nhân', icon: BookOpen },
-  { href: '/subscription', label: 'Gói học Premium', icon: Crown },
+  { href: '/practice/shadowing/results', label: 'Kết quả phát âm AI', enLabel: 'AI Speech Results', icon: BarChart3 },
+  { href: '/dashboard', label: 'Tiến độ học tập', enLabel: 'Progress', icon: LayoutDashboard },
+  { href: '/vocabulary', label: 'Sổ từ vựng cá nhân', enLabel: 'Vocabulary', icon: BookOpen },
+  { href: '/subscription', label: 'Gói học Premium', enLabel: 'Premium', icon: Crown },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { lang, setLang, t } = useLanguage();
 
   const authUser = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -86,8 +92,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const toggleLanguage = () => {
+    setLang(lang === 'vi' ? 'en' : 'vi');
+  };
+
   useEffect(() => {
-    // Đọc trạng thái thu gọn đã lưu từ trước
     const saved = localStorage.getItem('shadowtation_sidebar_collapsed');
     if (saved !== null) {
       setCollapsed(saved === 'true');
@@ -239,13 +248,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </span>
               ) : (
                 <div className="flex w-full items-center justify-between">
-                  <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                  <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
                     Gói Free
                   </span>
                   <Link
                     href="/subscription"
                     onClick={() => isDrawer && setMobileOpen(false)}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-700 hover:underline"
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline"
                   >
                     <Sparkles className="h-3 w-3 text-amber-500" />
                     <span>Nâng cấp Premium →</span>
@@ -299,22 +308,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (isExpanded) {
       return (
         <div className="rounded-2xl border border-indigo-100 dark:border-indigo-950/80 bg-indigo-50/70 dark:bg-indigo-950/40 p-3 text-center">
-          <p className="text-xs font-bold text-indigo-950 dark:text-indigo-200">Tham gia học tập</p>
-          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Đăng nhập để lưu tiến độ</p>
+          <p className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
+            {lang === 'en' ? 'Join Learning' : 'Tham gia học tập'}
+          </p>
+          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+            {lang === 'en' ? 'Sign in to save progress' : 'Đăng nhập để lưu tiến độ'}
+          </p>
           <div className="mt-2.5 flex flex-col gap-1.5">
             <Link
               href="/login"
               onClick={() => isDrawer && setMobileOpen(false)}
               className="rounded-xl bg-indigo-600 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 text-center transition"
             >
-              Đăng nhập
+              {lang === 'en' ? 'Sign in' : 'Đăng nhập'}
             </Link>
             <Link
               href="/register"
               onClick={() => isDrawer && setMobileOpen(false)}
               className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-center transition"
             >
-              Đăng ký miễn phí
+              {lang === 'en' ? 'Register free' : 'Đăng ký miễn phí'}
             </Link>
           </div>
         </div>
@@ -326,7 +339,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Link
           href="/login"
           className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition"
-          title="Đăng nhập tài khoản"
+          title={lang === 'en' ? 'Sign in' : 'Đăng nhập tài khoản'}
         >
           <LogIn className="h-5 w-5" />
         </Link>
@@ -346,6 +359,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           const active =
             pathname === linkPath && (!requestedMode || requestedMode === practiceNavMode);
           const Icon = item.icon;
+          const itemLabel = lang === 'en' ? item.enLabel : item.label;
 
           return (
             <Link
@@ -362,25 +376,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
               } ${!isExpanded ? 'justify-center px-2' : ''}`}
-              title={!isExpanded ? item.label : undefined}
+              title={!isExpanded ? itemLabel : undefined}
             >
               <Icon
                 className={`h-4 w-4 shrink-0 ${
                   active ? 'text-white' : 'text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
                 }`}
               />
-              {isExpanded && <span className="truncate">{item.label}</span>}
+              {isExpanded && <span className="truncate">{itemLabel}</span>}
 
               {/* Hover Tooltip when collapsed */}
               {!isExpanded && (
                 <div className="pointer-events-none absolute left-full ml-3 z-50 hidden whitespace-nowrap rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-xl group-hover:block">
-                  {item.label}
+                  {itemLabel}
                 </div>
               )}
             </Link>
           );
         })}
-
       </nav>
     );
   };
@@ -443,8 +456,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Bottom Section (Footer): Dark Mode Toggle + User Profile */}
+        {/* Bottom Section (Footer): Dark Mode Toggle + Language Switcher + User Profile */}
         <div className="border-t border-slate-100 dark:border-slate-800 p-2 space-y-1.5 shrink-0 bg-white dark:bg-slate-900">
+          {/* Language Switcher */}
+          <button
+            type="button"
+            onClick={toggleLanguage}
+            className={`flex items-center gap-2.5 w-full rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition ${
+              collapsed ? 'justify-center px-2' : 'justify-between'
+            }`}
+            title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
+            aria-label="Chuyển ngôn ngữ"
+          >
+            {collapsed ? (
+              lang === 'vi' ? <FlagVN className="w-5 h-3.5 rounded-[2px]" /> : <FlagUK className="w-5 h-3.5 rounded-[2px]" />
+            ) : (
+              <>
+                <div className="flex items-center gap-2.5">
+                  {lang === 'vi' ? <FlagVN className="w-5 h-3.5 rounded-[2px]" /> : <FlagUK className="w-5 h-3.5 rounded-[2px]" />}
+                  <span>{lang === 'vi' ? 'Tiếng Việt' : 'English'}</span>
+                </div>
+                <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase">
+                  {lang}
+                </span>
+              </>
+            )}
+          </button>
+
           {/* Nút chuyển đổi giao diện Sáng / Tối */}
           <button
             type="button"
@@ -491,10 +529,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               title={collapsed ? 'Đăng xuất' : undefined}
             >
               <LogOut className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>Đăng xuất</span>}
+              {!collapsed && <span>{lang === 'en' ? 'Sign out' : 'Đăng xuất'}</span>}
               {collapsed && (
                 <div className="pointer-events-none absolute left-full ml-3 z-50 hidden whitespace-nowrap rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-xl group-hover:block">
-                  Đăng xuất
+                  {lang === 'en' ? 'Sign out' : 'Đăng xuất'}
                 </div>
               )}
             </button>
@@ -540,6 +578,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Nút chuyển đổi ngôn ngữ trên Mobile Topbar */}
+          <button
+            type="button"
+            onClick={toggleLanguage}
+            className="rounded-xl border border-slate-200 dark:border-slate-700 p-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+            title={lang === 'vi' ? 'English' : 'Tiếng Việt'}
+            aria-label="Chuyển ngôn ngữ"
+          >
+            {lang === 'vi' ? <FlagVN className="w-4 h-3 rounded-[2px]" /> : <FlagUK className="w-4 h-3 rounded-[2px]" />}
+          </button>
+
           {/* Nút chuyển đổi giao diện trên Mobile Topbar */}
           <button
             type="button"
@@ -566,7 +615,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               href="/login"
               className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
             >
-              Đăng nhập
+              {lang === 'en' ? 'Sign in' : 'Đăng nhập'}
             </Link>
           )}
         </div>
@@ -610,6 +659,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Bottom */}
             <div className="border-t border-slate-100 dark:border-slate-800 p-3 space-y-2 shrink-0 bg-white dark:bg-slate-900">
+              {/* Nút ngôn ngữ trong Drawer */}
+              <button
+                type="button"
+                onClick={toggleLanguage}
+                className="flex items-center justify-between w-full rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition"
+              >
+                <div className="flex items-center gap-2.5">
+                  {lang === 'vi' ? <FlagVN className="w-5 h-3.5 rounded-[2px]" /> : <FlagUK className="w-5 h-3.5 rounded-[2px]" />}
+                  <span>{lang === 'vi' ? 'Tiếng Việt' : 'English'}</span>
+                </div>
+                <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase">
+                  {lang}
+                </span>
+              </button>
+
               {/* Nút chuyển đổi giao diện trong Mobile Drawer */}
               <button
                 type="button"
@@ -638,7 +702,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className="flex items-center gap-3 w-full rounded-xl px-3.5 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                 >
                   <LogOut className="h-4 w-4" />
-                  <span>Đăng xuất</span>
+                  <span>{lang === 'en' ? 'Sign out' : 'Đăng xuất'}</span>
                 </button>
               )}
             </div>
@@ -654,6 +718,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         <div className="app-content">{children}</div>
       </div>
+
+      {/* ================= 24/7 AI TUTOR CHATBOT ================= */}
+      {!pathname.startsWith('/admin') && <AiTutorBot />}
     </div>
   );
 }
