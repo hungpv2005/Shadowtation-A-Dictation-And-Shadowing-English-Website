@@ -25,7 +25,7 @@ export class PaymentController {
   @Post('create-order')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Khởi tạo đơn hàng thanh toán Premium và nhận URL chuyển hướng (UC-10)' })
+  @ApiOperation({ summary: 'Khởi tạo đơn hàng thanh toán Premium và nhận URL chuyển hướng' })
   @ApiResponse({ status: 201, description: 'Tạo đơn hàng thành công, trả về URL thanh toán' })
   async createOrder(
     @Req() req: any,

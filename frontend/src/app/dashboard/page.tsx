@@ -236,7 +236,7 @@ export default function DashboardPage() {
           <strong className="text-lg font-bold">Chưa tải được dữ liệu tiến độ.</strong>
           <p className="mt-1">{error}</p>
           <div className="mt-4">
-            <Link href="/features/uc-01" className="inline-flex rounded-xl bg-rose-600 px-5 py-2.5 font-bold text-white shadow hover:bg-rose-700">
+            <Link href="/login" className="inline-flex rounded-xl bg-rose-600 px-5 py-2.5 font-bold text-white shadow hover:bg-rose-700">
               Đăng nhập tài khoản
             </Link>
           </div>

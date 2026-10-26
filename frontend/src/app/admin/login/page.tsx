@@ -2,7 +2,6 @@
 
 import { Suspense, useState, FormEvent, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAuthStore, UserProfile } from '@/lib/auth-store';
 import {
@@ -15,7 +14,6 @@ import {
   AlertTriangle,
   Server,
   Database,
-  ArrowLeft,
   KeyRound,
   CheckCircle2,
 } from 'lucide-react';
@@ -253,16 +251,7 @@ function AdminLoginForm() {
           </div>
         </div>
 
-        {/* Back to student page link */}
-        <div className="mt-6 text-center">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-300 transition"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span>Quay lại trang học tập chính</span>
-          </Link>
-        </div>
+
       </div>
     </div>
   );

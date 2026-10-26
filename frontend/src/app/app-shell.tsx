@@ -42,7 +42,7 @@ const navItems = [
   },
   { href: '/practice/shadowing/results', label: 'Kết quả phát âm AI', icon: BarChart3 },
   { href: '/dashboard', label: 'Tiến độ học tập', icon: LayoutDashboard },
-  { href: '/features/uc-07', label: 'Sổ từ vựng cá nhân', icon: BookOpen },
+  { href: '/vocabulary', label: 'Sổ từ vựng cá nhân', icon: BookOpen },
   { href: '/subscription', label: 'Gói học Premium', icon: Crown },
 ];
 
@@ -232,13 +232,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700">
                     <ShieldCheck className="h-3 w-3" /> Quản trị viên
                   </span>
-                  <Link
-                    href="/admin"
-                    onClick={() => isDrawer && setMobileOpen(false)}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 hover:underline"
-                  >
-                    <span>Vào Admin →</span>
-                  </Link>
                 </div>
               ) : isPremium ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">

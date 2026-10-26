@@ -63,14 +63,20 @@ function LoginFormContent() {
         body: JSON.stringify({ email, password }),
       });
 
-      setAuth(data.user, data.accessToken, data.refreshToken, rememberMe);
-
-      // Nếu là Admin thì ưu tiên dẫn vào trang /admin nếu không có redirect chỉ định
-      if (data.user.role === 'ADMIN' && (!redirectUrl || redirectUrl === '/')) {
-        router.push('/admin');
-      } else {
-        router.push(redirectUrl);
+      if (data.user.role === 'ADMIN') {
+        const refreshToken = data.refreshToken;
+        if (refreshToken) {
+          void apiFetch('/auth/logout', {
+            method: 'POST',
+            body: JSON.stringify({ refreshToken }),
+          }).catch(() => undefined);
+        }
+        setError('Tài khoản này là Quản trị viên (Admin). Cổng đăng nhập này chỉ dành riêng cho học viên. Quản trị viên vui lòng truy cập đường dẫn Cổng Quản Trị riêng biệt.');
+        return;
       }
+
+      setAuth(data.user, data.accessToken, data.refreshToken, rememberMe);
+      router.push(redirectUrl);
       router.refresh();
     } catch (err: any) {
       if (err instanceof ApiError && err.status === 429) {
@@ -289,14 +295,6 @@ function LoginFormContent() {
               )}
             </button>
 
-            <div className="mt-6 border-t border-slate-100 pt-4 text-center">
-              <p className="text-xs text-slate-500">
-                Bạn là Quản trị viên hệ thống?{' '}
-                <Link href="/admin/login" className="font-semibold text-slate-700 hover:text-indigo-600 underline">
-                  Đăng nhập tại Cổng Admin riêng biệt →
-                </Link>
-              </p>
-            </div>
           </form>
         </section>
       </div>

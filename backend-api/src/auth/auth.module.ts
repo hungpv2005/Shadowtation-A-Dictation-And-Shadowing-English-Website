@@ -6,6 +6,7 @@ import { RefreshToken } from '../database/entities/refresh-token.entity';
 import { PasswordResetToken } from '../database/entities/password-reset-token.entity';
 import { User } from '../database/entities/user.entity';
 import { AuthController } from './auth.controller';
+import { AdminUserController } from './admin-user.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard, OptionalJwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoginThrottlerGuard } from './guards/login-throttler.guard';
@@ -18,7 +19,7 @@ import { JwtStrategy } from './jwt.strategy';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({}),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, AdminUserController],
   providers: [AuthService, JwtStrategy, JwtAuthGuard, OptionalJwtAuthGuard, LoginThrottlerGuard, RolesGuard],
   exports: [AuthService, JwtAuthGuard, OptionalJwtAuthGuard, LoginThrottlerGuard, RolesGuard, JwtStrategy, PassportModule],
 })

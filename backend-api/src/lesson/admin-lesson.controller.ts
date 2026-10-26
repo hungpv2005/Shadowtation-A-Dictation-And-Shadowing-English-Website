@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,8 +10,11 @@ import {
   Put,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { LessonService } from './lesson.service';
 import { Lesson, LessonLevel, LessonStatus, UserRole } from '../database/entities';
@@ -122,4 +126,43 @@ export class AdminLessonController {
   ) {
     return this.lessonService.deleteSentence(lessonId, sentenceId);
   }
+
+  @Post('auto-transcribe-preview')
+  @ApiOperation({ summary: 'Admin xem trước phụ đề tự động bằng AI (AI Auto-Transcription Preview)' })
+  @ApiResponse({ status: 200, description: 'Kết quả trích xuất phụ đề AI' })
+  async autoTranscribePreview(
+    @Body() body: { mediaUrl?: string; captionsVtt?: string },
+  ) {
+    return this.lessonService.autoTranscribe(body.mediaUrl, body.captionsVtt);
+  }
+
+  @Post(':id/auto-transcribe')
+  @ApiOperation({ summary: 'Admin tự động trích xuất phụ đề AI và cập nhật vào bài học' })
+  @ApiResponse({ status: 200, description: 'Trích xuất và lưu câu thoại thành công' })
+  async autoTranscribeLesson(
+    @Param('id', ParseUUIDPipe) lessonId: string,
+    @Body() body: { mediaUrl?: string; captionsVtt?: string },
+  ) {
+    return this.lessonService.autoTranscribeAndSave(lessonId, body.mediaUrl, body.captionsVtt);
+  }
+
+  @Post('auto-transcribe-audio-file')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @ApiOperation({ summary: 'Admin tải lên file audio (.mp3, .wav) để AI Whisper trích xuất câu và mốc thời gian' })
+  async autoTranscribeAudioFile(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('Vui lòng chọn tệp âm thanh (.mp3, .wav, .m4a).');
+    return this.lessonService.autoTranscribeFromBuffer(file.buffer, file.originalname);
+  }
+
+  @Post(':id/auto-transcribe-audio-file')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @ApiOperation({ summary: 'Admin tải lên file audio để AI trích xuất và lưu trực tiếp vào bài học' })
+  async autoTranscribeAndSaveAudioFile(
+    @Param('id', ParseUUIDPipe) lessonId: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('Vui lòng chọn tệp âm thanh (.mp3, .wav, .m4a).');
+    return this.lessonService.autoTranscribeAndSaveFromBuffer(lessonId, file.buffer, file.originalname);
+  }
 }
+

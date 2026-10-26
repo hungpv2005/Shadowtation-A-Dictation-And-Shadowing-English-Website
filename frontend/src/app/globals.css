@@ -471,20 +471,20 @@ button { cursor: pointer; }
 .method-soon { margin-left: 5px; color: #a5afbc; font-size: 11px; font-weight: 500; }
 
 /* Audio panel */
-.dictation-screen section > div:nth-of-type(2) {
+.dictation-screen section:not(.shadowing-practice) > div:nth-of-type(2):not(.shadowing-karaoke) {
   padding: 18px; border-radius: 16px;
   background: linear-gradient(135deg, #1e3a6e, #2550d0);
   color: white;
 }
-.dictation-screen section > div:nth-of-type(2) p { margin: 0; }
-.dictation-screen section > div:nth-of-type(2) button {
+.dictation-screen section:not(.shadowing-practice) > div:nth-of-type(2):not(.shadowing-karaoke) p { margin: 0; }
+.dictation-screen section:not(.shadowing-practice) > div:nth-of-type(2):not(.shadowing-karaoke) button {
   border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.14); color: white;
 }
-.dictation-screen section > div:nth-of-type(2) button[class*="bg-white"] { background: white; color: #1e3a6e; }
-.dictation-screen section > div:nth-of-type(2) > div { display: flex; align-items: center; gap: 10px; }
-.dictation-screen section > div:nth-of-type(2) > div + div { margin-top: 13px; }
-.dictation-screen section > div:nth-of-type(2) > div + div span { margin-right: 3px; color: #c5d3ed; }
-.dictation-screen section > div:nth-of-type(2) > div + div button { padding: 5px 9px; }
+.dictation-screen section:not(.shadowing-practice) > div:nth-of-type(2):not(.shadowing-karaoke) button[class*="bg-white"] { background: white; color: #1e3a6e; }
+.dictation-screen section:not(.shadowing-practice) > div:nth-of-type(2):not(.shadowing-karaoke) > div { display: flex; align-items: center; gap: 10px; }
+.dictation-screen section:not(.shadowing-practice) > div:nth-of-type(2):not(.shadowing-karaoke) > div + div { margin-top: 13px; }
+.dictation-screen section:not(.shadowing-practice) > div:nth-of-type(2):not(.shadowing-karaoke) > div + div span { margin-right: 3px; color: #c5d3ed; }
+.dictation-screen section:not(.shadowing-practice) > div:nth-of-type(2):not(.shadowing-karaoke) > div + div button { padding: 5px 9px; }
 .audio-seek {
   display: flex; align-items: center; gap: 9px; margin-top: 15px;
   color: #c5d3ed; font-size: 11px;
@@ -1000,15 +1000,20 @@ button { cursor: pointer; }
 .shadowing-karaoke {
   display: flex; align-items: center; align-content: center; flex-wrap: wrap; gap: 8px;
   min-height: 108px; padding: 20px;
-  border: 1.5px solid #d0dcf0; border-radius: 18px;
-  background: linear-gradient(135deg, #f6f9ff, #eef3ff);
+  border: 1.5px solid #cbd5e1; border-radius: 18px;
+  background: #f8fafc;
 }
 .shadowing-karaoke-word {
-  position: relative; padding: 7px 5px; border-radius: 8px;
-  color: #2a3d58; font-size: clamp(17px,2vw,22px); font-weight: 700; line-height: 1.4;
+  position: relative; padding: 6px 10px; border-radius: 8px;
+  color: #0f172a; font-size: clamp(17px,2vw,22px); font-weight: 700; line-height: 1.4;
   transition: color .15s, background .15s, transform .15s;
 }
-.shadowing-karaoke-word.active { transform: translateY(-2px); background: var(--blue-light); color: var(--blue-deep); box-shadow: inset 0 -2.5px var(--blue); }
+.shadowing-karaoke-word.active {
+  transform: translateY(-2px);
+  background: #2563eb;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
 .shadowing-recorder {
   padding: 20px; border: 1.5px solid #d0dcea; border-radius: 18px;
   background: white; box-shadow: var(--shadow-sm);
@@ -1212,3 +1217,653 @@ button { cursor: pointer; }
   .dictation-workbench .dictation-navigation > div { width: 100%; }
   .dictation-workbench .dictation-navigation > div button { flex: 1; }
 }
+
+/* ─── Dark Mode Overrides for Dictation & Shadowing Practice ────────────── */
+html.dark .dictation-screen,
+.dark .dictation-screen {
+  background: #090d16 !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark .dictation-screen > div:not(.grid),
+.dark .dictation-screen > div:not(.grid) {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6) !important;
+}
+
+html.dark .dictation-screen h1,
+html.dark .dictation-screen h2,
+html.dark .dictation-screen h3,
+.dark .dictation-screen h1,
+.dark .dictation-screen h2,
+.dark .dictation-screen h3 {
+  color: #f8fafc !important;
+}
+
+html.dark .dictation-screen p,
+.dark .dictation-screen p {
+  color: #94a3b8;
+}
+
+html.dark .dictation-back-link,
+.dark .dictation-back-link {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .dictation-back-link:hover,
+.dark .dictation-back-link:hover {
+  background: #334155 !important;
+  border-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+/* Practice Method Tabs (Dictation / Shadowing Switch) */
+html.dark .practice-method-tabs,
+.dark .practice-method-tabs {
+  background: #090d16 !important;
+  border: 1.5px solid #1e293b !important;
+}
+html.dark .practice-method-tabs button,
+html.dark .practice-method-tabs a,
+.dark .practice-method-tabs button,
+.dark .practice-method-tabs a {
+  color: #94a3b8 !important;
+}
+html.dark .practice-method-tabs .method-active,
+.dark .practice-method-tabs .method-active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4) !important;
+}
+
+/* Library View Tabs */
+html.dark .library-view-tabs button,
+.dark .library-view-tabs button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .library-view-tabs button:hover,
+.dark .library-view-tabs button:hover {
+  background: #334155 !important;
+  color: #ffffff !important;
+}
+html.dark .library-view-tabs button.active,
+.dark .library-view-tabs button.active {
+  background: #2563eb !important;
+  border-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+html.dark .library-view-tabs button span,
+.dark .library-view-tabs button span {
+  background: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .library-view-tabs button.active span,
+.dark .library-view-tabs button.active span {
+  background: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+
+/* Search Bar & Filter Controls */
+html.dark .library-search,
+.dark .library-search {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+html.dark .library-search:focus-within,
+.dark .library-search:focus-within {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25) !important;
+}
+html.dark .library-search input,
+.dark .library-search input {
+  color: #f8fafc !important;
+  background: transparent !important;
+}
+html.dark .library-search input::placeholder,
+.dark .library-search input::placeholder {
+  color: #64748b !important;
+}
+html.dark .library-search .search-clear,
+.dark .library-search .search-clear {
+  background: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .dictation-library-tools select,
+html.dark .dictation-library-tools input,
+.dark .dictation-library-tools select,
+.dark .dictation-library-tools input {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+html.dark .dictation-library-tools .library-filter,
+.dark .dictation-library-tools .library-filter {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .dictation-library-tools .library-filter.active,
+.dark .dictation-library-tools .library-filter.active {
+  background: #312e81 !important;
+  border-color: #6366f1 !important;
+  color: #c7d2fe !important;
+}
+
+/* Lesson Cards & Grid */
+html.dark .dictation-lesson-card,
+html.dark .recent-lesson-card,
+.dark .dictation-lesson-card,
+.dark .recent-lesson-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+html.dark .dictation-lesson-card:hover,
+html.dark .recent-lesson-card:hover,
+.dark .dictation-lesson-card:hover,
+.dark .recent-lesson-card:hover {
+  border-color: #4f46e5 !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark .dictation-lesson-card h2,
+html.dark .dictation-lesson-card h3,
+.dark .dictation-lesson-card h2,
+.dark .dictation-lesson-card h3 {
+  color: #f8fafc !important;
+}
+html.dark .dictation-lesson-card p,
+.dark .dictation-lesson-card p {
+  color: #94a3b8 !important;
+}
+html.dark .dictation-lesson-card .lesson-heart,
+.dark .dictation-lesson-card .lesson-heart {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #fb7185 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+html.dark .dictation-lesson-card .lesson-badges span.bg-blue-50,
+.dark .dictation-lesson-card .lesson-badges span.bg-blue-50 {
+  background: #1e3a8a !important;
+  color: #bfdbfe !important;
+}
+html.dark .dictation-lesson-card .lesson-source-name,
+.dark .dictation-lesson-card .lesson-source-name {
+  color: #64748b !important;
+}
+html.dark .dictation-screen > div:not(.grid) > div.grid > button,
+.dark .dictation-screen > div:not(.grid) > div.grid > button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+html.dark .media-type-badge,
+.dark .media-type-badge {
+  background: #064e3b !important;
+  color: #6ee7b7 !important;
+}
+html.dark .recent-status-badge,
+.dark .recent-status-badge {
+  background: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .recent-status-badge.in-progress,
+.dark .recent-status-badge.in-progress {
+  background: #78350f !important;
+  color: #fcd34d !important;
+}
+html.dark .recent-status-badge.completed,
+.dark .recent-status-badge.completed {
+  background: #064e3b !important;
+  color: #6ee7b7 !important;
+}
+
+/* Empty States in Dark Mode */
+html.dark .library-empty,
+.dark .library-empty,
+html.dark .dictation-screen section.rounded-3xl.border-dashed,
+.dark .dictation-screen section.rounded-3xl.border-dashed {
+  background: #0b1120 !important;
+  border-color: #334155 !important;
+  color: #94a3b8 !important;
+}
+
+/* Custom Lesson / YouTube Import in Dark Mode */
+html.dark .youtube-import,
+.dark .youtube-import {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+}
+html.dark .youtube-import h2,
+.dark .youtube-import h2 {
+  color: #f8fafc !important;
+}
+html.dark .youtube-import input,
+html.dark .youtube-import textarea,
+html.dark .youtube-import select,
+.dark .youtube-import input,
+.dark .youtube-import textarea,
+.dark .youtube-import select {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+/* Active Lesson Workspace (Dictation & Shadowing) */
+html.dark .dictation-screen > header,
+.dark .dictation-screen > header {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+}
+html.dark .dictation-screen > header p,
+.dark .dictation-screen > header p {
+  color: #f8fafc !important;
+}
+html.dark .dictation-screen aside,
+.dark .dictation-screen aside {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+html.dark .dictation-screen aside nav button,
+.dark .dictation-screen aside nav button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #94a3b8 !important;
+}
+html.dark .dictation-screen aside nav button:hover,
+.dark .dictation-screen aside nav button:hover {
+  background: #334155 !important;
+  color: #f8fafc !important;
+}
+html.dark .dictation-screen section.dictation-workbench,
+.dark .dictation-screen section.dictation-workbench {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+html.dark .dictation-workbench .dictation-practice-heading h1,
+.dark .dictation-workbench .dictation-practice-heading h1 {
+  color: #f8fafc !important;
+}
+html.dark .dictation-workbench .dictation-mode-switch,
+.dark .dictation-workbench .dictation-mode-switch {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+html.dark .dictation-workbench .dictation-mode-switch button,
+.dark .dictation-workbench .dictation-mode-switch button {
+  color: #94a3b8 !important;
+}
+html.dark .dictation-workbench .dictation-mode-switch button.active,
+.dark .dictation-workbench .dictation-mode-switch button.active {
+  background: #334155 !important;
+  color: #ffffff !important;
+}
+html.dark .dictation-workbench > .dictation-shortcuts,
+.dark .dictation-workbench > .dictation-shortcuts {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #94a3b8 !important;
+}
+html.dark .dictation-shortcuts strong,
+.dark .dictation-shortcuts strong {
+  color: #cbd5e1 !important;
+}
+html.dark .dictation-shortcuts kbd,
+.dark .dictation-shortcuts kbd {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .dictation-workbench textarea.dictation-answer-input,
+.dark .dictation-workbench textarea.dictation-answer-input {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+html.dark .dictation-workbench textarea.dictation-answer-input::placeholder,
+.dark .dictation-workbench textarea.dictation-answer-input::placeholder {
+  color: #64748b !important;
+}
+html.dark .dictation-workbench .dictation-answer-label,
+.dark .dictation-workbench .dictation-answer-label {
+  color: #cbd5e1 !important;
+}
+html.dark .dictation-workbench .dictation-controls button,
+.dark .dictation-workbench .dictation-controls button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .dictation-workbench .dictation-controls .hint-action,
+.dark .dictation-workbench .dictation-controls .hint-action {
+  background: #1e293b !important;
+  border-color: #3b82f6 !important;
+  color: #93c5fd !important;
+}
+html.dark .dictation-workbench .dictation-hint-card,
+.dark .dictation-workbench .dictation-hint-card {
+  background: #1e293b !important;
+  border-color: #3b82f6 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .dictation-hint-card p:last-child,
+.dark .dictation-hint-card p:last-child {
+  color: #f8fafc !important;
+}
+html.dark .dictation-workbench .dictation-navigation button,
+.dark .dictation-workbench .dictation-navigation button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .dictation-screen .dictation-exit-button,
+.dark .dictation-screen .dictation-exit-button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+/* Media Player in Dark Mode */
+html.dark .media-dictation-player,
+.dark .media-dictation-player {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+}
+html.dark .media-player-summary strong,
+.dark .media-player-summary strong {
+  color: #f8fafc !important;
+}
+html.dark .media-sentence-time,
+.dark .media-sentence-time {
+  color: #94a3b8 !important;
+}
+html.dark .media-player-timeline input,
+.dark .media-player-timeline input {
+  background: #334155 !important;
+}
+html.dark .media-audio-actions button,
+.dark .media-audio-actions button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .media-audio-actions button:hover:not(:disabled),
+.dark .media-audio-actions button:hover:not(:disabled) {
+  background: #334155 !important;
+  color: #ffffff !important;
+}
+html.dark .media-replay-button,
+.dark .media-replay-button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .media-playback-rates button,
+.dark .media-playback-rates button {
+  background: #1e293b !important;
+  color: #94a3b8 !important;
+}
+html.dark .media-playback-rates button.active,
+.dark .media-playback-rates button.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+/* Shadowing Practice in Dark Mode */
+html.dark .shadowing-intro h2,
+html.dark .shadowing-result-heading h3,
+.dark .shadowing-intro h2,
+.dark .shadowing-result-heading h3 {
+  color: #f8fafc !important;
+}
+html.dark .shadowing-intro-copy p,
+.dark .shadowing-intro-copy p {
+  color: #94a3b8 !important;
+}
+html.dark .shadowing-karaoke,
+.dark .shadowing-karaoke {
+  background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+  border-color: #334155 !important;
+}
+html.dark .shadowing-karaoke-word,
+.dark .shadowing-karaoke-word {
+  color: #cbd5e1 !important;
+}
+html.dark .shadowing-karaoke-word.active,
+.dark .shadowing-karaoke-word.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.45) !important;
+}
+html.dark .shadowing-recorder,
+.dark .shadowing-recorder {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+html.dark .shadowing-recorder strong,
+.dark .shadowing-recorder strong {
+  color: #f8fafc !important;
+}
+html.dark .shadowing-recorder-copy span:not(.shadowing-record-dot),
+.dark .shadowing-recorder-copy span:not(.shadowing-record-dot) {
+  color: #94a3b8 !important;
+}
+html.dark .shadowing-recorder-copy time,
+.dark .shadowing-recorder-copy time {
+  color: #cbd5e1 !important;
+}
+html.dark .shadowing-waveform,
+.dark .shadowing-waveform {
+  background: #0f172a !important;
+}
+html.dark .shadowing-retry-button,
+.dark .shadowing-retry-button {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+html.dark .shadowing-result,
+.dark .shadowing-result {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+html.dark .shadowing-metric,
+.dark .shadowing-metric {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+html.dark .shadowing-metric strong,
+.dark .shadowing-metric strong {
+  color: #f8fafc !important;
+}
+html.dark .shadowing-metric span,
+.dark .shadowing-metric span {
+  color: #94a3b8 !important;
+}
+html.dark .shadowing-word-results-title,
+.dark .shadowing-word-results-title {
+  color: #f8fafc !important;
+}
+html.dark .shadowing-processing,
+.dark .shadowing-processing {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+html.dark .shadowing-processing strong,
+.dark .shadowing-processing strong {
+  color: #93c5fd !important;
+}
+html.dark .shadowing-processing p,
+.dark .shadowing-processing p {
+  color: #cbd5e1 !important;
+}
+html.dark .shadowing-shortcuts,
+.dark .shadowing-shortcuts {
+  color: #94a3b8 !important;
+}
+html.dark .shadowing-shortcuts strong,
+html.dark .shadowing-shortcuts kbd,
+.dark .shadowing-shortcuts strong,
+.dark .shadowing-shortcuts kbd {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+/* Modals & Dialogs in Dark Mode */
+html.dark .dictation-screen .dictation-modal,
+.dark .dictation-screen .dictation-modal {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+html.dark .dictation-modal h2,
+.dark .dictation-modal h2 {
+  color: #f8fafc !important;
+}
+html.dark .dictation-modal-copy,
+.dark .dictation-modal-copy {
+  color: #94a3b8 !important;
+}
+html.dark .dictation-modal-copy strong,
+.dark .dictation-modal-copy strong {
+  color: #f8fafc !important;
+}
+html.dark .dictation-secondary-button,
+.dark .dictation-secondary-button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+/* Completion Screen in Dark Mode */
+html.dark .completion-card,
+.dark .completion-card {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+html.dark .completion-card h1,
+.dark .completion-card h1 {
+  color: #f8fafc !important;
+}
+html.dark .completion-actions button:nth-child(2),
+.dark .completion-actions button:nth-child(2) {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+/* History / Results Pages in Dark Mode */
+html.dark .shadowing-history-page,
+.dark .shadowing-history-page {
+  color: #f8fafc !important;
+}
+html.dark .shadowing-history-header h1,
+.dark .shadowing-history-header h1 {
+  color: #f8fafc !important;
+}
+html.dark .shadowing-history-header p:not(.shadowing-eyebrow),
+.dark .shadowing-history-header p:not(.shadowing-eyebrow) {
+  color: #94a3b8 !important;
+}
+html.dark .shadowing-history-stats article,
+.dark .shadowing-history-stats article {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+}
+html.dark .shadowing-history-stats span,
+.dark .shadowing-history-stats span {
+  color: #94a3b8 !important;
+}
+html.dark .shadowing-history-stats strong,
+.dark .shadowing-history-stats strong {
+  color: #f8fafc !important;
+}
+html.dark .shadowing-history-card,
+.dark .shadowing-history-card {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+}
+html.dark .shadowing-history-card-toggle,
+.dark .shadowing-history-card-toggle {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+}
+html.dark .shadowing-history-card-toggle:hover,
+.dark .shadowing-history-card-toggle:hover {
+  background: #1e293b !important;
+}
+html.dark .shadowing-history-main strong,
+.dark .shadowing-history-main strong {
+  color: #f8fafc !important;
+}
+html.dark .shadowing-history-main small,
+.dark .shadowing-history-main small {
+  color: #94a3b8 !important;
+}
+html.dark .shadowing-history-metrics > div,
+.dark .shadowing-history-metrics > div {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+html.dark .shadowing-history-metrics strong,
+.dark .shadowing-history-metrics strong {
+  color: #f8fafc !important;
+}
+html.dark .shadowing-history-metrics span,
+.dark .shadowing-history-metrics span {
+  color: #94a3b8 !important;
+}
+html.dark .shadowing-history-empty,
+.dark .shadowing-history-empty {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #94a3b8 !important;
+}
+html.dark .shadowing-history-empty h2,
+.dark .shadowing-history-empty h2 {
+  color: #f8fafc !important;
+}
+
+/* Vocabulary Review Section in Dark Mode */
+html.dark .vocab-review-section,
+.dark .vocab-review-section {
+  color: #f8fafc !important;
+}
+html.dark .vocab-review-section h1,
+html.dark .vocab-review-section h2,
+html.dark .vocab-review-section h3,
+.dark .vocab-review-section h1,
+.dark .vocab-review-section h2,
+.dark .vocab-review-section h3 {
+  color: #f8fafc !important;
+}
+html.dark .vocab-review-section article,
+.dark .vocab-review-section article {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+html.dark .vocab-review-section button:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-indigo"]),
+.dark .vocab-review-section button:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-indigo"]) {
+  background: #1e293b;
+  border-color: #334155;
+  color: #f8fafc;
+}
+html.dark .vocab-review-section input,
+html.dark .vocab-review-section textarea,
+.dark .vocab-review-section input,
+.dark .vocab-review-section textarea {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+

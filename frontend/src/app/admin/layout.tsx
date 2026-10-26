@@ -13,16 +13,17 @@ import {
   CreditCard,
   Activity,
   LogOut,
-  ExternalLink,
   Menu,
   X,
   AlertCircle,
   Sparkles,
+  Users,
 } from 'lucide-react';
 
 const adminNavItems = [
   { href: '/admin', label: 'Tổng quan Dashboard', icon: LayoutDashboard },
-  { href: '/admin/lessons', label: 'Kho Bài học (UC-08)', icon: BookOpen },
+  { href: '/admin/lessons', label: 'Kho Bài học', icon: BookOpen },
+  { href: '/admin/users', label: 'Quản lý Người dùng', icon: Users },
   { href: '/admin/subscriptions', label: 'Gói cước Premium', icon: Crown },
   { href: '/admin/transactions', label: 'Đối soát Giao dịch', icon: CreditCard },
   { href: '/admin/system', label: 'Hạ tầng & CSDL', icon: Activity },
@@ -42,6 +43,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
+    if (pathname === '/admin/login') {
+      setCheckingAuth(false);
+      return;
+    }
+
     const token =
       localStorage.getItem('access_token') ??
       sessionStorage.getItem('access_token') ??
@@ -65,9 +71,24 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       .finally(() => {
         setCheckingAuth(false);
       });
-  }, [authUser, updateUserStore]);
+  }, [authUser, updateUserStore, pathname]);
 
-  // Bỏ qua layout admin nếu đang ở trang /admin/login
+  useEffect(() => {
+    if (pathname === '/admin/login') return;
+
+    if (!checkingAuth) {
+      const currentToken =
+        localStorage.getItem('access_token') ??
+        sessionStorage.getItem('access_token') ??
+        localStorage.getItem('accessToken') ??
+        sessionStorage.getItem('accessToken');
+      if (!currentToken) {
+        router.replace(`/admin/login?redirect=${encodeURIComponent(pathname)}`);
+      }
+    }
+  }, [checkingAuth, pathname, router]);
+
+  // Bỏ qua layout admin nếu đang ở trang /admin/login (đặt sau tất cả hooks)
   if (pathname === '/admin/login') {
     return <>{children}</>;
   }
@@ -143,17 +164,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <span className="font-bold text-rose-400">{user.role}</span>, không có thẩm quyền trong Cổng Quản trị Admin.
           </p>
           <div className="mt-6 flex justify-center gap-3">
-            <Link
-              href="/"
-              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition"
-            >
-              ← Về trang học viên
-            </Link>
             <button
               onClick={signOut}
-              className="rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-rose-500 transition"
+              className="rounded-xl bg-rose-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-rose-500 transition"
             >
-              Đăng nhập tài khoản Quản trị khác
+              Đăng nhập bằng tài khoản Quản trị
             </button>
           </div>
         </div>
@@ -217,13 +232,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="mt-3 space-y-1">
-            <Link
-              href="/"
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
-            >
-              <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
-              <span>Xem trang Học viên</span>
-            </Link>
+
 
             <button
               type="button"
@@ -269,13 +278,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               Core API & CSDL Online
             </span>
 
-            <Link
-              href="/"
-              className="hidden rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:flex items-center gap-1.5"
-            >
-              <span>Trang Học viên</span>
-              <ExternalLink className="h-3 w-3 text-slate-400" />
-            </Link>
+
           </div>
         </header>
 

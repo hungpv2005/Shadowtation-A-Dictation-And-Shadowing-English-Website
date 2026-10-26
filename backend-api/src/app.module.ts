@@ -13,6 +13,7 @@ import { LessonModule } from './lesson/lesson.module';
 import { PaymentModule } from './payment/payment.module';
 import { ShadowingModule } from './practice/shadowing/shadowing.module';
 import { LearningModule } from './learning/learning.module';
+import { SystemConfigModule } from './system-config/system-config.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { LearningModule } from './learning/learning.module';
     SubscriptionModule,
     LessonModule,
     PaymentModule,
+    SystemConfigModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

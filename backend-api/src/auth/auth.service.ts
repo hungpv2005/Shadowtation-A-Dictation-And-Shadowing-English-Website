@@ -367,4 +367,89 @@ export class AuthService {
 
     return this.generateTokens(user);
   }
+
+  async findAllUsersAdmin(query: { q?: string; role?: string; status?: string }) {
+    const qb = this.userRepository
+      .createQueryBuilder('user')
+      .select([
+        'user.id',
+        'user.email',
+        'user.fullName',
+        'user.avatarUrl',
+        'user.role',
+        'user.isActive',
+        'user.streakCount',
+        'user.premiumExpiredAt',
+        'user.createdAt',
+        'user.updatedAt',
+      ])
+      .orderBy('user.createdAt', 'DESC');
+
+    if (query.q && query.q.trim()) {
+      const keyword = `%${query.q.trim().toLowerCase()}%`;
+      qb.andWhere('(LOWER(user.email) LIKE :keyword OR LOWER(user.fullName) LIKE :keyword)', { keyword });
+    }
+
+    if (query.role && query.role !== 'ALL') {
+      qb.andWhere('user.role = :role', { role: query.role });
+    }
+
+    if (query.status && query.status !== 'ALL') {
+      const isActive = query.status === 'ACTIVE';
+      qb.andWhere('user.isActive = :isActive', { isActive });
+    }
+
+    return qb.getMany();
+  }
+
+  async findUserByIdAdmin(id: string) {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: ['attempts', 'paymentTransactions'],
+    });
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy tài khoản người dùng.');
+    }
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      role: user.role,
+      isActive: user.isActive,
+      streakCount: user.streakCount,
+      premiumExpiredAt: user.premiumExpiredAt,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      totalAttempts: user.attempts?.length || 0,
+      totalTransactions: user.paymentTransactions?.length || 0,
+    };
+  }
+
+  async updateUserStatusAdmin(adminUserId: string, targetUserId: string, isActive: boolean) {
+    if (adminUserId === targetUserId && !isActive) {
+      throw new BadRequestException('Bạn không thể tự khóa tài khoản quản trị của chính mình.');
+    }
+    const user = await this.userRepository.findOne({ where: { id: targetUserId } });
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy tài khoản người dùng.');
+    }
+    user.isActive = isActive;
+    await this.userRepository.save(user);
+    return this.sanitizeUser(user);
+  }
+
+  async updateUserRoleAdmin(adminUserId: string, targetUserId: string, role: UserRole) {
+    if (adminUserId === targetUserId && role !== UserRole.ADMIN) {
+      throw new BadRequestException('Bạn không thể tự hạ quyền của chính mình.');
+    }
+    const user = await this.userRepository.findOne({ where: { id: targetUserId } });
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy tài khoản người dùng.');
+    }
+    user.role = role;
+    await this.userRepository.save(user);
+    return this.sanitizeUser(user);
+  }
 }
+

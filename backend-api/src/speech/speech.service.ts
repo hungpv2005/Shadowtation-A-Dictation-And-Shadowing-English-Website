@@ -145,6 +145,85 @@ export class SpeechService {
     }
   }
 
+  /**
+   * Tự động trích xuất các câu thoại kèm mốc thời gian (start, end) từ Buffer âm thanh bằng OpenAI Whisper
+   */
+  async transcribeAudioBufferWithTimestamps(
+    audioBuffer: Buffer,
+    audioFormat = 'audio/mp3',
+  ): Promise<Array<{ orderIndex: number; startTime: number; endTime: number; text: string }>> {
+    if (!audioBuffer?.length) {
+      throw new BadRequestException('Tệp âm thanh không có dữ liệu.');
+    }
+
+    const format = this.resolveAudioFormat(audioFormat);
+    const apiKey = this.configService.get<string>('OPENAI_API_KEY')?.trim();
+
+    if (!apiKey) {
+      if (this.isMockFallbackEnabled()) {
+        this.logger.warn('OpenAI API Key chưa được cấu hình, trả về các câu mẫu giả lập cho âm thanh.');
+        return [
+          { orderIndex: 1, startTime: 0.0, endTime: 3.5, text: 'Hello, welcome to this English listening lesson.' },
+          { orderIndex: 2, startTime: 3.8, endTime: 7.2, text: 'We are practicing English pronunciation and dictation today.' },
+          { orderIndex: 3, startTime: 7.5, endTime: 11.0, text: 'Please listen carefully and repeat after the speaker.' },
+        ];
+      }
+      throw new BadRequestException(
+        'Tính năng trích xuất phụ đề từ file âm thanh cần cấu hình OPENAI_API_KEY để sử dụng OpenAI Whisper.',
+      );
+    }
+
+    try {
+      if (!this.openai) {
+        this.openai = new OpenAI({ apiKey, timeout: 60_000, maxRetries: 1 });
+      }
+
+      const file = await toFile(audioBuffer, `audio.${format.extension}`, {
+        type: format.mimeType,
+      });
+
+      const transcription: any = await this.openai.audio.transcriptions.create({
+        file,
+        model: this.configService.get<string>('OPENAI_TRANSCRIPTION_MODEL')?.trim() || 'whisper-1',
+        language: 'en',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['segment'],
+      });
+
+      if (Array.isArray(transcription.segments) && transcription.segments.length > 0) {
+        return transcription.segments.map((seg: any, idx: number) => ({
+          orderIndex: idx + 1,
+          startTime: Number(Number(seg.start).toFixed(2)),
+          endTime: Number(Number(seg.end).toFixed(2)),
+          text: String(seg.text).trim(),
+        }));
+      }
+
+      if (transcription.text?.trim()) {
+        return [
+          {
+            orderIndex: 1,
+            startTime: 0.0,
+            endTime: Number((transcription.duration || 5).toFixed(2)),
+            text: transcription.text.trim(),
+          },
+        ];
+      }
+
+      throw new BadRequestException('Không nhận diện được giọng nói tiếng Anh trong tệp âm thanh.');
+    } catch (err: any) {
+      if (err instanceof BadRequestException) throw err;
+      this.logger.error(`OpenAI Whisper transcription failed: ${err.message}`);
+      if (this.isMockFallbackEnabled()) {
+        return [
+          { orderIndex: 1, startTime: 0.0, endTime: 3.5, text: 'Hello, welcome to this English listening lesson.' },
+          { orderIndex: 2, startTime: 3.8, endTime: 7.2, text: 'We are practicing English pronunciation and dictation today.' },
+        ];
+      }
+      throw new BadRequestException(`Lỗi khi nhận diện file âm thanh qua Whisper: ${err.message}`);
+    }
+  }
+
   healthCheck() {
     const configured = Boolean(this.configService.get<string>('OPENAI_API_KEY')?.trim());
     const model = this.configService.get<string>('OPENAI_TRANSCRIPTION_MODEL')?.trim() || 'whisper-1';

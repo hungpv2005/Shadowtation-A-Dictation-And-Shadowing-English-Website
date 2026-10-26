@@ -9,8 +9,7 @@ export default function FeaturePage({ params }: { params: { slug: string } }) {
 
   if (feature.id === 'uc-01') redirect('/login');
   if (feature.id === 'uc-06') redirect('/dashboard');
-  if (feature.id === 'uc-07') return <ReviewListPage />;
-  if (feature.id === 'uc-08') redirect('/admin');
+  if (feature.id === 'uc-07') redirect('/vocabulary');
   if (feature.id === 'uc-10') redirect('/subscription');
 
   return (

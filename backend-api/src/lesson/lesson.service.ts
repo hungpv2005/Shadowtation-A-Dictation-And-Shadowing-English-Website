@@ -1,11 +1,36 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Lesson, LessonLevel, LessonStatus } from '../database/entities/lesson.entity';
 import { LessonSentence, WordTiming } from '../database/entities/lesson-sentence.entity';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { CreateSentenceDto, UpdateSentenceDto } from './dto/create-sentence.dto';
+import { fetchYouTubeSentences, isYouTubeHost, parseWebVtt } from '../practice/dictation/dictation-captions';
+import { SpeechService } from '../speech/speech.service';
+
+const SAMPLE_AUDIO_TRANSCRIPTS: Record<
+  string,
+  Array<{ orderIndex: number; startTime: number; endTime: number; text: string }>
+> = {
+  'daily-conversation-01': [
+    { orderIndex: 1, startTime: 0.0, endTime: 2.14, text: 'Hello, how are you doing today?' },
+    { orderIndex: 2, startTime: 2.39, endTime: 5.12, text: "I'm doing well, thank you for asking." },
+    { orderIndex: 3, startTime: 5.37, endTime: 8.86, text: 'Are you ready to practice English listening and speaking?' },
+  ],
+  'at-the-coffee-shop': [
+    { orderIndex: 1, startTime: 0.0, endTime: 2.5, text: 'Good morning! What can I get started for you today?' },
+    { orderIndex: 2, startTime: 2.75, endTime: 5.92, text: 'Could I please have a large iced latte with oat milk?' },
+    { orderIndex: 3, startTime: 6.17, endTime: 9.04, text: 'Sure thing, would you like any extra syrup or whipped cream?' },
+  ],
+  'technology-and-daily-life': [
+    { orderIndex: 1, startTime: 0.0, endTime: 2.66, text: 'Technology is changing the way we live and work.' },
+    { orderIndex: 2, startTime: 2.91, endTime: 6.05, text: 'Many people now study English with online tools.' },
+    { orderIndex: 3, startTime: 6.3, endTime: 9.22, text: 'Practice every day and you will improve quickly.' },
+  ],
+};
 
 @Injectable()
 export class LessonService {
@@ -14,6 +39,7 @@ export class LessonService {
     private readonly lessonRepository: Repository<Lesson>,
     @InjectRepository(LessonSentence)
     private readonly sentenceRepository: Repository<LessonSentence>,
+    private readonly speechService: SpeechService,
   ) {}
 
   /**
@@ -288,4 +314,179 @@ export class LessonService {
 
     return this.sentenceRepository.save(entities);
   }
+
+  /**
+   * Tự động trích xuất phụ đề AI (AI Auto-Transcription) từ YouTube URL hoặc WebVTT
+   */
+  /**
+   * Định dạng danh sách câu thô thành định dạng chuẩn có wordsJson và durationSeconds
+   */
+  private formatTranscribeResult(
+    parsedSentences: Array<{ orderIndex: number; startTime: number; endTime: number; text: string }>,
+  ) {
+    if (!parsedSentences.length) {
+      throw new BadRequestException('Không tìm thấy câu phụ đề tiếng Anh nào từ nguồn media.');
+    }
+
+    const durationSeconds = Math.ceil(Math.max(...parsedSentences.map((s) => s.endTime), 1));
+
+    const sentences = parsedSentences.map((sentence, index) => {
+      const words = sentence.text.trim().split(/\s+/).filter(Boolean);
+      const step = (sentence.endTime - sentence.startTime) / Math.max(words.length, 1);
+      return {
+        orderIndex: sentence.orderIndex !== undefined ? sentence.orderIndex : index + 1,
+        startTime: sentence.startTime,
+        endTime: sentence.endTime,
+        textContent: sentence.text.trim(),
+        wordsJson: words.map((word, wIdx) => ({
+          word: word.replace(/[.,!?;:"'()]/g, ''),
+          start: Number((sentence.startTime + wIdx * step).toFixed(2)),
+          end: Number((sentence.startTime + (wIdx + 1) * step).toFixed(2)),
+        })),
+      };
+    });
+
+    return {
+      durationSeconds,
+      sentenceCount: sentences.length,
+      sentences,
+    };
+  }
+
+  /**
+   * Tự động trích xuất phụ đề AI (AI Auto-Transcription) từ YouTube URL, file WebVTT, hoặc file âm thanh
+   */
+  async autoTranscribe(mediaUrl?: string, captionsVtt?: string) {
+    if (!mediaUrl?.trim() && !captionsVtt?.trim()) {
+      throw new BadRequestException('Vui lòng cung cấp URL media hoặc nội dung phụ đề WebVTT.');
+    }
+
+    let parsedSentences: Array<{ orderIndex: number; startTime: number; endTime: number; text: string }> = [];
+
+    // 1. Phụ đề WebVTT
+    if (captionsVtt && captionsVtt.trim()) {
+      parsedSentences = parseWebVtt(captionsVtt.trim());
+      return this.formatTranscribeResult(parsedSentences);
+    }
+
+    const trimmedUrl = (mediaUrl || '').trim();
+
+    // 2. Kiểm tra mẫu có sẵn (built-in sample lessons)
+    for (const [key, sampleSentences] of Object.entries(SAMPLE_AUDIO_TRANSCRIPTS)) {
+      if (trimmedUrl.includes(key)) {
+        return this.formatTranscribeResult(sampleSentences);
+      }
+    }
+
+    // 3. Kiểm tra nguồn YouTube
+    if (trimmedUrl.includes('youtube.com') || trimmedUrl.includes('youtu.be')) {
+      parsedSentences = await fetchYouTubeSentences(trimmedUrl);
+      return this.formatTranscribeResult(parsedSentences);
+    }
+
+    // 4. Kiểm tra file âm thanh cục bộ (Local Audio Path: /audio/... hoặc tương đối)
+    if (trimmedUrl.startsWith('/') || !trimmedUrl.includes('://')) {
+      const cleanPath = trimmedUrl.replace(/^\//, '');
+      const possiblePaths = [
+        path.resolve(process.cwd(), '../frontend/public', cleanPath),
+        path.resolve(process.cwd(), 'public', cleanPath),
+        path.resolve(process.cwd(), cleanPath),
+      ];
+      const foundPath = possiblePaths.find((p) => fs.existsSync(p));
+
+      if (foundPath) {
+        const fileBuffer = fs.readFileSync(foundPath);
+        const ext = path.extname(foundPath).replace('.', '') || 'mp3';
+        parsedSentences = await this.speechService.transcribeAudioBufferWithTimestamps(
+          fileBuffer,
+          `audio/${ext}`,
+        );
+        return this.formatTranscribeResult(parsedSentences);
+      }
+    }
+
+    // 5. Kiểm tra URL âm thanh từ xa (http/https mp3, wav, m4a, ogg,...)
+    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+      try {
+        const response = await fetch(trimmedUrl);
+        if (!response.ok) {
+          throw new BadRequestException(
+            `Không thể tải tệp âm thanh từ URL (${response.status} ${response.statusText}).`,
+          );
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const ext = trimmedUrl.split('?')[0].split('.').pop() || 'mp3';
+        parsedSentences = await this.speechService.transcribeAudioBufferWithTimestamps(
+          buffer,
+          `audio/${ext}`,
+        );
+        return this.formatTranscribeResult(parsedSentences);
+      } catch (err: any) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException(`Lỗi khi tải hoặc nhận diện file âm thanh từ URL: ${err.message}`);
+      }
+    }
+
+    throw new BadRequestException(
+      'Không hỗ trợ định dạng nguồn này. Vui lòng cung cấp URL YouTube có phụ đề, đường dẫn file âm thanh (.mp3, .wav), hoặc nội dung WebVTT.',
+    );
+  }
+
+  /**
+   * Tự động trích xuất trực tiếp từ file âm thanh tải lên (Buffer)
+   */
+  async autoTranscribeFromBuffer(buffer: Buffer, originalname = 'audio.mp3') {
+    const ext = originalname.split('.').pop() || 'mp3';
+    const parsedSentences = await this.speechService.transcribeAudioBufferWithTimestamps(
+      buffer,
+      `audio/${ext}`,
+    );
+    return this.formatTranscribeResult(parsedSentences);
+  }
+
+  /**
+   * Tự động trích xuất và lưu đè câu thoại cho bài học đã có
+   */
+  async autoTranscribeAndSave(lessonId: string, mediaUrl?: string, captionsVtt?: string) {
+    const lesson = await this.lessonRepository.findOne({ where: { id: lessonId } });
+    if (!lesson) {
+      throw new NotFoundException(`Không tìm thấy bài học với ID: ${lessonId}`);
+    }
+
+    const targetUrl = mediaUrl?.trim() || lesson.audioUrl;
+    const result = await this.autoTranscribe(targetUrl, captionsVtt);
+
+    // Cập nhật lại thời lượng bài học nếu cần
+    if (result.durationSeconds > 0) {
+      lesson.durationSeconds = result.durationSeconds;
+      await this.lessonRepository.save(lesson);
+    }
+
+    // Ghi đè danh sách câu thoại
+    await this.bulkSetSentences(lessonId, result.sentences);
+
+    return this.findByIdWithSentences(lessonId);
+  }
+
+  /**
+   * Tự động trích xuất từ file tải lên và lưu trực tiếp vào bài học
+   */
+  async autoTranscribeAndSaveFromBuffer(lessonId: string, buffer: Buffer, originalname = 'audio.mp3') {
+    const lesson = await this.lessonRepository.findOne({ where: { id: lessonId } });
+    if (!lesson) {
+      throw new NotFoundException(`Không tìm thấy bài học với ID: ${lessonId}`);
+    }
+
+    const result = await this.autoTranscribeFromBuffer(buffer, originalname);
+
+    if (result.durationSeconds > 0) {
+      lesson.durationSeconds = result.durationSeconds;
+      await this.lessonRepository.save(lesson);
+    }
+
+    await this.bulkSetSentences(lessonId, result.sentences);
+    return this.findByIdWithSentences(lessonId);
+  }
 }
+

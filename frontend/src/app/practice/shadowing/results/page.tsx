@@ -117,7 +117,7 @@ export default function ShadowingResultsPage() {
         <div role="alert" className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-6 text-lg text-rose-700 mb-6">
           <p className="font-bold">{error}</p>
           <p className="mt-2 text-base text-rose-600">
-            <Link href="/features/uc-01" className="underline font-bold">Đăng nhập lại</Link> hoặc thử tải lại trang.
+            <Link href="/login" className="underline font-bold">Đăng nhập lại</Link> hoặc thử tải lại trang.
           </p>
         </div>
       )}

@@ -328,7 +328,7 @@ export function ShadowingPractice({
   const phrase = sentence.textContent.trim().split(/\s+/);
 
   return <section className="shadowing-practice" aria-label="Luyện Shadowing và chấm điểm phát âm">
-    <div className="shadowing-intro"><div><p className="shadowing-eyebrow">LUYỆN NÓI · UC-04</p><h2>Ghi âm và luyện nói nhại</h2></div><div className="shadowing-intro-copy"><p>Nghe câu mẫu, ghi âm câu trả lời và nhận điểm ngay sau khi AI chấm xong.</p></div></div>
+    <div className="shadowing-intro"><div><p className="shadowing-eyebrow">LUYỆN NÓI</p><h2>Ghi âm và luyện nói nhại</h2></div><div className="shadowing-intro-copy"><p>Nghe câu mẫu, ghi âm câu trả lời và nhận điểm ngay sau khi AI chấm xong.</p></div></div>
 
     <div className="shadowing-karaoke" aria-label="Câu mẫu karaoke">
       {phrase.map((word, index) => {

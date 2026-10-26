@@ -31,7 +31,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoginThrottlerGuard } from './guards/login-throttler.guard';
 import { Throttle, seconds } from '@nestjs/throttler';
 
-@ApiTags('Authentication (UC-01)')
+@ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(
