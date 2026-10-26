@@ -10,6 +10,7 @@ import { MediaDictationPlayer } from './media-dictation-player';
 import { ShadowingPractice } from './shadowing-practice';
 import { clearShadowingRecordings } from './shadowing-recordings';
 import { VocabularyReviewSection } from './vocabulary-review-section';
+import { useLanguage } from '@/lib/i18n';
 
 type Lesson = { id: string; title: string; level: string; audioUrl?: string | null; mediaType?: 'AUDIO' | 'VIDEO' | 'PODCAST'; sourceName?: string | null; sourceUrl?: string | null; durationSeconds?: number | null; isPremiumOnly: boolean; access: 'AVAILABLE' | 'LOCKED'; sentenceCount: number };
 type Sentence = { id: string; startTime: number; endTime: number; textContent: string; wordsJson: { word: string; start: number; end: number }[] };
@@ -105,6 +106,7 @@ function hasLoginToken() { return typeof window !== 'undefined' && Boolean(local
 export default function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { lang, t } = useLanguage();
   const selectedLessonId = searchParams.get('lesson');
   const sentenceToOpenId = searchParams.get('sentence');
   const [practiceMode, setPracticeMode] = useState<PracticeMode>(searchParams.get('mode') === 'shadowing' ? 'SHADOWING' : 'DICTATION');
@@ -494,6 +496,26 @@ export default function Home() {
   async function createCustomLesson() {
     if (importing) return;
     if (!hasLoginToken()) { setLoginPrompt(true); return; }
+
+    let isPremium = false;
+    try {
+      const raw = localStorage.getItem('student_profile');
+      if (raw) {
+        const u = JSON.parse(raw);
+        isPremium = u?.role === 'PREMIUM_STUDENT' || u?.role === 'ADMIN' || u?.isPremium === true;
+      }
+    } catch {}
+    if (!isPremium) isPremium = localStorage.getItem('shadowtation_tier') === 'PREMIUM';
+
+    const customCount = lessons.filter((item) => Boolean(item.sourceUrl)).length;
+    if (!isPremium && customCount >= 2) {
+      setLockedLesson({
+        id: 'premium-custom-limit',
+        title: 'Tài khoản Miễn phí chỉ được tự tạo tối đa 2 bài học từ YouTube/Podcast riêng',
+      } as Lesson);
+      return;
+    }
+
     setImporting(true);
     setYoutubeError('');
     try {
@@ -534,6 +556,8 @@ export default function Home() {
     : (completedCount ? Math.round(Object.values(scores).reduce((sum, score) => sum + score.accuracy, 0) / completedCount) : 0);
   const shadowingComplete = sentences.length > 0 && sentences.every((item) => shadowingScores[item.id] !== undefined);
   const shadowingRemaining = Math.max(0, sentences.length - Object.keys(shadowingScores).length);
+  const dictationComplete = sentences.length > 0 && sentences.every((item) => scores[item.id] !== undefined);
+  const dictationRemaining = Math.max(0, sentences.length - Object.keys(scores).length);
   const karaokeWordIndex = sentence ? (() => {
     const timedIndex = sentence.wordsJson.findIndex((word) => mediaTime >= word.start && mediaTime < word.end);
     if (timedIndex >= 0) return timedIndex;
@@ -959,7 +983,6 @@ export default function Home() {
   useEffect(() => {
     if (!lesson || finished) return;
     const handleShortcut = (event: KeyboardEvent) => {
-      if (practiceMode !== 'DICTATION') return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       const isTyping = Boolean(target?.closest('input, textarea, select, [contenteditable="true"]'));
       const isControl = Boolean(target?.closest('button, a, [role="button"]'));
@@ -969,7 +992,25 @@ export default function Home() {
         returnToLibrary();
         return;
       }
-      if (isTyping || isControl || event.metaKey || event.ctrlKey) return;
+      if (isTyping) return;
+
+      // Phím tắt Shadowing: Bấm phím mũi tên trái/phải để quay lại câu trước hoặc sang câu tiếp theo
+      if (practiceMode === 'SHADOWING') {
+        if (event.key === 'ArrowLeft' || (event.altKey && event.key === 'ArrowLeft')) {
+          event.preventDefault();
+          selectSentence(Math.max(0, current - 1));
+          return;
+        }
+        if (event.key === 'ArrowRight' || (event.altKey && event.key === 'ArrowRight')) {
+          event.preventDefault();
+          selectSentence(Math.min(sentences.length - 1, current + 1));
+          return;
+        }
+        return;
+      }
+
+      if (practiceMode !== 'DICTATION') return;
+      if (isControl || event.metaKey || event.ctrlKey) return;
       if (event.altKey) {
         const shortcut = event.key.toLowerCase();
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
@@ -1006,55 +1047,98 @@ export default function Home() {
   if (!lesson) return (
     <main className="dictation-screen min-h-screen bg-slate-50 px-5 py-12 text-slate-900">
       <div className="mx-auto max-w-5xl">
-        <div className="practice-method-tabs" role="tablist" aria-label="Chọn chế độ luyện tập">
-          <button type="button" role="tab" aria-selected={practiceMode === 'DICTATION'} onClick={() => changePracticeMode('DICTATION')} className={practiceMode === 'DICTATION' ? 'method-active font-bold' : 'font-semibold'}>
-            Luyện nghe (Dictation)
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+          <button type="button" onClick={goBackFromLibrary} className="dictation-back-link">
+            {t('dictation.back_home')}
           </button>
-          <button type="button" role="tab" aria-selected={practiceMode === 'SHADOWING'} onClick={() => changePracticeMode('SHADOWING')} className={practiceMode === 'SHADOWING' ? 'method-active font-bold' : 'font-semibold'}>
-            Luyện nói (Shadowing)
-          </button>
+          <div className="practice-method-tabs" role="tablist" aria-label="Tabs">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={practiceMode === 'DICTATION'}
+              onClick={() => changePracticeMode('DICTATION')}
+              className={practiceMode === 'DICTATION' ? 'method-active font-bold' : 'font-semibold'}
+            >
+              🎧 {t('dictation.tab_dictation')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={practiceMode === 'SHADOWING'}
+              onClick={() => changePracticeMode('SHADOWING')}
+              className={practiceMode === 'SHADOWING' ? 'method-active font-bold' : 'font-semibold'}
+            >
+              🎙️ {t('dictation.tab_shadowing')}
+            </button>
+          </div>
         </div>
-        <header className="mb-10">
-          <button type="button" onClick={goBackFromLibrary} className="dictation-back-link mb-3">
-            ← Quay lại trang chủ
-          </button>
+
+        <header className="mb-8">
           <p className="text-sm font-bold uppercase tracking-[.2em] text-blue-600">
-            Shadowtation · {practiceMode === 'SHADOWING' ? 'Luyện nói (Shadowing)' : 'Luyện nghe (Dictation)'}
+            Shadowtation · {practiceMode === 'SHADOWING' ? t('dictation.tab_shadowing') : t('dictation.tab_dictation')}
           </p>
-          <h1 className="mt-3 text-4xl font-extrabold text-slate-900">
-            {practiceMode === 'SHADOWING' ? 'Chọn bài luyện nói' : 'Chọn bài luyện nghe'}
+          <h1 className="mt-2 text-3xl font-extrabold text-slate-900 md:text-4xl">
+            {practiceMode === 'SHADOWING' ? (lang === 'en' ? 'Select Speaking Lesson' : 'Chọn bài luyện nói') : (lang === 'en' ? 'Select Listening Lesson' : 'Chọn bài luyện nghe')}
           </h1>
           <p className="mt-2 text-base text-slate-600">
             {practiceMode === 'SHADOWING'
-              ? 'Nghe câu mẫu, ghi âm giọng nói và xem kết quả chấm phát âm chuẩn xác.'
-              : 'Nghe từng câu, chép lại và nhận phản hồi lỗi sai ngay khi nhập.'}
+              ? (lang === 'en' ? 'Listen to model audio, record your voice, and see accurate AI pronunciation results.' : 'Nghe câu mẫu, ghi âm giọng nói và xem kết quả chấm phát âm chuẩn xác.')
+              : (lang === 'en' ? 'Listen sentence by sentence, transcribe, and receive live error feedback.' : 'Nghe từng câu, chép lại và nhận phản hồi lỗi sai ngay khi nhập.')}
           </p>
         </header>
+
         {error && <p role="alert" className="mb-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-base font-semibold text-rose-700">{error}</p>}
-        <div className="library-view-tabs" role="tablist" aria-label="Nhóm bài học">
-          <button type="button" role="tab" aria-selected={libraryView === 'AVAILABLE'} className={libraryView === 'AVAILABLE' ? 'active' : ''} onClick={() => setLibraryView('AVAILABLE')}>
-            Bài học có sẵn <span>{visibleLessons.length}</span>
-          </button>
-          <button type="button" role="tab" aria-selected={libraryView === 'RECENT'} className={libraryView === 'RECENT' ? 'active' : ''} onClick={() => setLibraryView('RECENT')}>
-            Bài đang luyện dở &amp; học gần đây <span>{recentLibraryLessons.length}</span>
-          </button>
-          <button type="button" role="tab" aria-selected={libraryView === 'CUSTOM'} className={libraryView === 'CUSTOM' ? 'active' : ''} onClick={() => setLibraryView('CUSTOM')}>
-            <Plus aria-hidden="true" size={17} />Thêm bài học của riêng bạn
-          </button>
-          <Link
-            href={`/practice/vocabulary-review?mode=${practiceMode.toLowerCase()}`}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700 shadow-sm transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
-          >
-            📖 Danh sách từ vựng ôn tập
-          </Link>
+
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b-2 border-slate-200 pb-4">
+          <div className="flex flex-wrap items-center gap-2.5" role="tablist" aria-label="Library tabs">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={libraryView === 'AVAILABLE'}
+              className={`library-tab-btn ${libraryView === 'AVAILABLE' ? 'active' : ''}`}
+              onClick={() => setLibraryView('AVAILABLE')}
+            >
+              <span>{lang === 'en' ? 'Available Lessons' : 'Bài học có sẵn'}</span>
+              <span className="count-badge">{visibleLessons.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={libraryView === 'RECENT'}
+              className={`library-tab-btn ${libraryView === 'RECENT' ? 'active' : ''}`}
+              onClick={() => setLibraryView('RECENT')}
+            >
+              <span>{lang === 'en' ? 'In Progress & Recent' : 'Đang học & Gần đây'}</span>
+              <span className="count-badge">{recentLibraryLessons.length}</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={libraryView === 'CUSTOM'}
+              className={`library-action-btn ${libraryView === 'CUSTOM' ? 'active' : ''}`}
+              onClick={() => setLibraryView('CUSTOM')}
+            >
+              <Plus aria-hidden="true" size={17} />
+              <span>{lang === 'en' ? 'Import custom lesson' : 'Thêm bài học riêng'}</span>
+            </button>
+            <Link
+              href={`/practice/vocabulary-review?mode=${practiceMode.toLowerCase()}`}
+              className="library-action-btn"
+            >
+              <span>📖 {lang === 'en' ? 'Review Vocabulary' : 'Ôn tập từ vựng'}</span>
+            </Link>
+          </div>
         </div>
 
         {libraryView === 'AVAILABLE' && <>
         <div className="dictation-library-tools">
-          <div className="library-search" role="search"><Search aria-hidden="true" size={19} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm bài học theo tên..." aria-label="Tìm bài học" />{search && <button type="button" className="search-clear" aria-label="Xóa nội dung tìm kiếm" onClick={() => setSearch('')}><X size={17} /></button>}</div>
-          <select aria-label="Lọc trình độ" value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}><option value="ALL">Mọi trình độ</option><option value="BEGINNER">A1–A2 · Cơ bản</option><option value="INTERMEDIATE">B1–B2 · Trung cấp</option><option value="ADVANCED">C1–C2 · Nâng cao</option></select>
-          <select aria-label="Lọc loại nội dung" value={mediaFilter} onChange={(event) => setMediaFilter(event.target.value)}><option value="ALL">Audio, video, podcast</option><option value="AUDIO">Audio</option><option value="VIDEO">Video</option><option value="PODCAST">Podcast</option></select>
-          <button onClick={() => setShowFavorites((value) => !value)} className={showFavorites ? 'library-filter active' : 'library-filter'}>{showFavorites ? '♥ Đang xem yêu thích' : '♡ Yêu thích'}</button>
+          <div className="library-search" role="search"><Search aria-hidden="true" size={19} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('dictation.search_placeholder')} aria-label="Search" />{search && <button type="button" className="search-clear" aria-label="Clear" onClick={() => setSearch('')}><X size={17} /></button>}</div>
+          <select aria-label="Level filter" value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}><option value="ALL">{t('dictation.filter_all_levels')}</option><option value="BEGINNER">{lang === 'en' ? 'A1–A2 · Beginner' : 'A1–A2 · Cơ bản'}</option><option value="INTERMEDIATE">{lang === 'en' ? 'B1–B2 · Intermediate' : 'B1–B2 · Trung cấp'}</option><option value="ADVANCED">{lang === 'en' ? 'C1–C2 · Advanced' : 'C1–C2 · Nâng cao'}</option></select>
+          <select aria-label="Media filter" value={mediaFilter} onChange={(event) => setMediaFilter(event.target.value)}><option value="ALL">{t('dictation.filter_all_media')}</option><option value="AUDIO">Audio</option><option value="VIDEO">Video</option><option value="PODCAST">Podcast</option></select>
+          <button onClick={() => setShowFavorites((value) => !value)} className={showFavorites ? 'library-filter active' : 'library-filter'}>{showFavorites ? (lang === 'en' ? '♥ Viewing Favorites' : '♥ Đang xem yêu thích') : (lang === 'en' ? '♡ Favorites' : '♡ Yêu thích')}</button>
         </div>
         </>}
         {libraryView === 'RECENT' && (recentLibraryLessons.length > 0 ? <section className="dictation-recent-section" aria-labelledby="recent-lessons-title">
@@ -1150,33 +1234,111 @@ export default function Home() {
     </main>
   );
 
-  if (finished) return <main className="dictation-screen completion-screen grid min-h-screen place-items-center bg-slate-50 p-6"><section className="completion-card w-full max-w-lg rounded-3xl bg-white p-8 text-center shadow-xl md:p-10"><div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">✓</div><h1 className="mt-5 text-3xl font-bold">Hoàn thành bài luyện tập</h1><p className="mt-2 text-slate-500">{lesson.title}</p><p className="mt-8 text-6xl font-black text-blue-600">{completionScore ?? average}<span className="text-2xl">/100</span></p><p className="mt-2 text-slate-500">Điểm tổng {practiceMode === 'SHADOWING' ? 'Luyện nói' : 'Luyện nghe'} · {completedCount}/{sentences.length} {practiceMode === 'SHADOWING' ? 'câu đã chấm phát âm' : 'câu đã xác nhận'}</p><div className="completion-progress" role="progressbar" aria-label="Tiến độ hoàn thành" aria-valuenow={sentences.length ? Math.round(completedCount / sentences.length * 100) : 0} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div>{completionSyncPending && <p role="status" className="completion-sync-note">Điểm và tiến trình đã lưu trên thiết bị; sẽ đồng bộ với máy chủ khi kết nối được khôi phục.</p>}{error && <p role="alert" className="completion-sync-note">{error}</p>}<div className="completion-actions"><button type="button" onClick={restartCurrentLesson}>1. Làm lại từ đầu</button><button type="button" onClick={returnToLibrary}>2. Chọn bài luyện khác</button><button type="button" onClick={() => setFinished(false)}>3. Tiếp tục làm và chỉnh sửa tiến trình</button></div>{loginPrompt && <LoginRequiredDialog onClose={() => setLoginPrompt(false)} />}</section></main>;
+  if (finished) return <main className="dictation-screen completion-screen grid min-h-screen place-items-center bg-slate-50 p-6"><section className="completion-card w-full max-w-lg rounded-3xl bg-white p-8 text-center shadow-xl md:p-10"><div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">✓</div><h1 className="mt-5 text-3xl font-bold">{t('dictation.completed_title')}</h1><p className="mt-2 text-slate-500">{lesson.title}</p><p className="mt-8 text-6xl font-black text-blue-600">{completionScore ?? average}<span className="text-2xl">/100</span></p><p className="mt-2 text-slate-500">{lang === 'en' ? `Total score · ${practiceMode === 'SHADOWING' ? 'Speaking' : 'Listening'} · ${completedCount}/${sentences.length} sentences assessed` : `Điểm tổng ${practiceMode === 'SHADOWING' ? 'Luyện nói' : 'Luyện nghe'} · ${completedCount}/${sentences.length} ${practiceMode === 'SHADOWING' ? 'câu đã chấm phát âm' : 'câu đã xác nhận'}`}</p><div className="completion-progress" role="progressbar" aria-label="Progress" aria-valuenow={sentences.length ? Math.round(completedCount / sentences.length * 100) : 0} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div>{completionSyncPending && <p role="status" className="completion-sync-note">{lang === 'en' ? 'Scores saved locally; will sync with server when connection is restored.' : 'Điểm và tiến trình đã lưu trên thiết bị; sẽ đồng bộ với máy chủ khi kết nối được khôi phục.'}</p>}{error && <p role="alert" className="completion-sync-note">{error}</p>}<div className="completion-actions"><button type="button" onClick={restartCurrentLesson}>{t('dictation.redo_start')}</button><button type="button" onClick={returnToLibrary}>{t('dictation.pick_another')}</button><button type="button" onClick={() => setFinished(false)}>{t('dictation.continue_edit')}</button></div>{loginPrompt && <LoginRequiredDialog onClose={() => setLoginPrompt(false)} />}</section></main>;
 
   return (
     <main className="dictation-screen min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b bg-white"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4"><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={returnToLibrary} className="dictation-back-link">← Danh sách bài</button><button type="button" onClick={returnToLibrary} className="dictation-exit-button">Thoát bài</button><Link href={practiceMode === 'DICTATION' ? '/practice/dictation/results' : '/practice/shadowing/results'} className="dictation-exit-button inline-flex items-center justify-center text-center">Xem lịch sử kết quả chấm {practiceMode === 'DICTATION' ? 'Luyện nghe' : 'Luyện nói'}</Link></div><div className="text-right"><p className="font-bold">{lesson.title}</p><p className="text-xs text-slate-500">{lesson.level}</p></div></div></header>
+      <header className="border-b bg-white"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4"><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={returnToLibrary} className="dictation-back-link">{t('dictation.back_library')}</button><button type="button" onClick={returnToLibrary} className="dictation-exit-button">{t('dictation.exit_lesson')}</button><Link href={practiceMode === 'DICTATION' ? '/practice/dictation/results' : '/practice/shadowing/results'} className="dictation-exit-button inline-flex items-center justify-center text-center">{practiceMode === 'DICTATION' ? t('dictation.view_history_dictation') : t('dictation.view_history_shadowing')}</Link></div><div className="text-right"><p className="font-bold">{lesson.title}</p><p className="text-xs text-slate-500">{lesson.level}</p></div></div></header>
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-7 lg:grid-cols-[260px_1fr]">
-        <aside className="rounded-2xl border bg-white p-5"><div className="flex justify-between text-sm"><span className="font-bold">Tiến độ</span><span>{completedCount}/{sentences.length} câu</span></div><div className="mt-3 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-blue-600" style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div><nav className="mt-5 grid grid-cols-5 gap-2 lg:grid-cols-3">{sentences.map((item, i) => <button key={item.id} onClick={() => selectSentence(i)} aria-label={`Câu ${i + 1}`} className={`h-10 rounded-lg text-sm font-bold ${current === i ? 'bg-blue-600 text-white' : (practiceMode === 'SHADOWING' ? shadowingScores[item.id] !== undefined : Boolean(scores[item.id])) ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{i + 1}</button>)}</nav>{practiceMode === 'DICTATION' && hasCompleted && typeof completionScore === 'number' && <div className="mt-6 rounded-xl bg-blue-50 p-4"><p className="text-xs font-semibold uppercase text-blue-600">Điểm tổng đã lưu</p><p className="mt-1 text-3xl font-black text-blue-800">{completionScore}/100</p></div>}{practiceMode === 'SHADOWING' && shadowingLessonCompleted && completedCount > 0 && <div className="mt-6 rounded-xl bg-blue-50 p-4"><p className="text-xs font-semibold uppercase text-blue-600">Điểm tổng đã lưu</p><p className="mt-1 text-3xl font-black text-blue-800">{average}/100</p></div>}</aside>
+        <aside className="rounded-2xl border bg-white p-5"><div className="flex justify-between text-sm"><span className="font-bold">{t('dictation.progress')}</span><span>{completedCount}/{sentences.length} {t('dictation.sentences_count')}</span></div><div className="mt-3 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-blue-600" style={{ width: `${sentences.length ? completedCount / sentences.length * 100 : 0}%` }} /></div><nav className="mt-5 grid grid-cols-5 gap-2 lg:grid-cols-3">{sentences.map((item, i) => <button key={item.id} onClick={() => selectSentence(i)} aria-label={`${t('dictation.sentence')} ${i + 1}`} className={`h-10 rounded-lg text-sm font-bold ${current === i ? 'bg-blue-600 text-white' : (practiceMode === 'SHADOWING' ? shadowingScores[item.id] !== undefined : Boolean(scores[item.id])) ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{i + 1}</button>)}</nav>{practiceMode === 'DICTATION' && hasCompleted && typeof completionScore === 'number' && <div className="mt-6 rounded-xl bg-blue-50 p-4"><p className="text-xs font-semibold uppercase text-blue-600">{t('dictation.saved_total')}</p><p className="mt-1 text-3xl font-black text-blue-800">{completionScore}/100</p></div>}{practiceMode === 'SHADOWING' && shadowingLessonCompleted && completedCount > 0 && <div className="mt-6 rounded-xl bg-blue-50 p-4"><p className="text-xs font-semibold uppercase text-blue-600">{t('dictation.saved_total')}</p><p className="mt-1 text-3xl font-black text-blue-800">{average}/100</p></div>}</aside>
         <section className="dictation-workbench min-w-0 rounded-2xl border bg-white p-5 shadow-sm md:p-8">
           {error && <p role="alert" className="mb-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error}</p>}
-          {!sentence ? <div className="py-12 text-center text-slate-600">{error ? <><p>{error}</p><button type="button" onClick={returnToLibrary} className="dictation-back-link mt-5">← Danh sách bài học</button></> : 'Đang tải nội dung bài học…'}</div> : <>
-            <div className="dictation-practice-heading"><div><p className="text-sm font-semibold text-blue-600">CÂU {current + 1} / {sentences.length}</p><h1>{practiceMode === 'SHADOWING' ? 'Nghe và nói nhại theo câu mẫu' : 'Nghe và nhập nội dung'}</h1></div>{practiceMode === 'DICTATION' && <div className="dictation-mode-switch"><button onClick={() => setMode('FULL')} aria-pressed={mode === 'FULL'} className={mode === 'FULL' ? 'active' : ''}>Chép cả câu</button><button onClick={() => setMode('BLANKS')} aria-pressed={mode === 'BLANKS'} className={mode === 'BLANKS' ? 'active' : ''}>Điền từ khuyết</button></div>}</div>
-            <MediaDictationPlayer key={`${lesson.id}-shared-audio`} mediaType={lesson.mediaType ?? 'AUDIO'} mediaUrl={lesson.mediaType === 'VIDEO' ? (lesson.sourceUrl ?? lesson.audioUrl) : lesson.audioUrl} title={lesson.title} startTime={sentence.startTime} endTime={sentence.endTime} onSeekToTime={lesson.mediaType === 'VIDEO' ? undefined : seekToTimeAndSelectSentence} onTimeUpdate={setMediaTime} />
+          {!sentence ? <div className="py-12 text-center text-slate-600">{error ? <><p>{error}</p><button type="button" onClick={returnToLibrary} className="dictation-back-link mt-5">{t('dictation.back_library')}</button></> : (lang === 'en' ? 'Loading lesson content…' : 'Đang tải nội dung bài học…')}</div> : <>
+            <div className="dictation-practice-heading"><div><p className="text-sm font-semibold text-blue-600">{t('dictation.sentence')} {current + 1} / {sentences.length}</p><h1>{practiceMode === 'SHADOWING' ? t('dictation.heading_shadowing') : t('dictation.heading_dictation')}</h1></div>{practiceMode === 'DICTATION' && <div className="dictation-mode-switch"><button onClick={() => setMode('FULL')} aria-pressed={mode === 'FULL'} className={mode === 'FULL' ? 'active' : ''}>{t('dictation.mode_full')}</button><button onClick={() => setMode('BLANKS')} aria-pressed={mode === 'BLANKS'} className={mode === 'BLANKS' ? 'active' : ''}>{t('dictation.mode_blanks')}</button></div>}</div>
+            <MediaDictationPlayer key={`${lesson.id}-shared-audio`} mediaType={lesson.mediaType ?? 'AUDIO'} mediaUrl={lesson.mediaType === 'VIDEO' ? (lesson.sourceUrl ?? lesson.audioUrl) : lesson.audioUrl} title={lesson.title} startTime={sentence.startTime} endTime={sentence.endTime} onSeekToTime={lesson.mediaType === 'VIDEO' ? undefined : seekToTimeAndSelectSentence} onTimeUpdate={setMediaTime} disableArrowSeek={practiceMode === 'SHADOWING'} />
             {practiceMode === 'DICTATION' ? <>
-              <div className="dictation-shortcuts" aria-label="Phím tắt Luyện nghe"><strong>Phím tắt</strong><span><kbd>Alt</kbd>+<kbd>M</kbd> phát / tạm dừng</span><span><kbd>Alt</kbd>+<kbd>R</kbd> nghe lại</span><span><kbd>Alt</kbd>+<kbd>T</kbd> thử lại câu</span><span><kbd>Alt</kbd>+<kbd>G</kbd> gợi ý</span><span><kbd>Alt</kbd>+<kbd>P</kbd> transcript</span><span><kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> đổi câu</span>{lesson.mediaType !== 'VIDEO' && <><span><kbd>←</kbd>/<kbd>→</kbd> tua lùi / tới 5 giây</span><span><kbd>M</kbd> tắt / bật tiếng</span></>}<span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> xác nhận khi đang nhập · <kbd>Enter</kbd> khi không gõ</span><span><kbd>Esc</kbd> về danh sách · tự lưu</span><small>Các phím tắt không kích hoạt trong ô trả lời; Space luôn dùng để nhập khoảng trắng.</small></div>
-              <div className="dictation-controls"><button onClick={nextHint} disabled={hintLevel >= 3 || Boolean(scores[sentence.id])} className="hint-action">✦ Gợi ý {hintLevel ? `(${hintLevel}/3 · −${hintPenalty(hintLevel, hintPenalties)}đ)` : ''}</button><button disabled={!transcriptOn && Boolean(scores[sentence.id])} onClick={toggleTranscript} className={`transcript-action ${transcriptOn ? 'active' : ''}`}>{transcriptOn ? 'Ẩn transcript' : 'Hiện transcript'}</button><button onClick={retrySentence}>Thử lại câu</button><span>Dùng gợi ý sẽ giảm điểm câu.</span></div>
-              {hintLevel > 0 && <div className="dictation-hint-card"><p>Gợi ý cấp {hintLevel} · Cấp cao hơn mở thêm manh mối</p><p>{maskedHint(sentence.textContent, hintLevel)}</p></div>}
+              <div className="dictation-shortcuts" aria-label="Shortcuts"><strong>{t('shadowing.shortcuts')}</strong><span><kbd>Alt</kbd>+<kbd>M</kbd> play / pause</span><span><kbd>Alt</kbd>+<kbd>R</kbd> replay</span><span><kbd>Alt</kbd>+<kbd>T</kbd> retry</span><span><kbd>Alt</kbd>+<kbd>G</kbd> hint</span><span><kbd>Alt</kbd>+<kbd>P</kbd> transcript</span><span><kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> prev / next</span>{lesson.mediaType !== 'VIDEO' && <><span><kbd>←</kbd>/<kbd>→</kbd> ±5s</span><span><kbd>M</kbd> mute</span></>}<span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> confirm</span><span><kbd>Esc</kbd> catalog</span></div>
+              <div className="dictation-controls"><button onClick={nextHint} disabled={hintLevel >= 3 || Boolean(scores[sentence.id])} className="hint-action">✦ {t('dictation.hint')} {hintLevel ? `(${hintLevel}/3 · −${hintPenalty(hintLevel, hintPenalties)}đ)` : ''}</button><button disabled={!transcriptOn && Boolean(scores[sentence.id])} onClick={toggleTranscript} className={`transcript-action ${transcriptOn ? 'active' : ''}`}>{transcriptOn ? t('dictation.hide_transcript') : t('dictation.show_transcript')}</button><button onClick={retrySentence}>{t('dictation.retry_sentence')}</button><span>{t('dictation.hint_warning')}</span></div>
+              {hintLevel > 0 && <div className="dictation-hint-card"><p>Hint level {hintLevel}</p><p>{maskedHint(sentence.textContent, hintLevel)}</p></div>}
               {transcriptOn && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-amber-800">Transcript</p><p className="mt-1 text-amber-950">{sentence.textContent}</p></div>}
-              <label htmlFor="dictation-answer" className="dictation-answer-label">Câu trả lời của bạn</label>
-              {mode === 'FULL' ? <textarea id="dictation-answer" value={answer} onChange={(event) => saveAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); confirmSentence(); } }} placeholder="Nhập những gì bạn nghe được…" rows={4} className="dictation-answer-input" /> : <FillBlanks key={`${sentence.id}-${fillReset}`} text={sentence.textContent} value={answer} onChange={saveAnswer} onConfirm={confirmSentence} />}
-              <div className="dictation-live-feedback"><span>Đối chiếu trực tiếp · cập nhật ngay khi bạn nhập</span>{liveScore && <span className="live-accuracy">Độ chính xác hiện tại: {liveScore.accuracy}%</span>}</div>
-              {scores[sentence.id] && <div className="dictation-confirmed-result"><p>Đã xác nhận câu · {scores[sentence.id].accuracy}% sau gợi ý</p><span>Điểm này được tính vào kết quả cuối cùng. Chọn “Thử lại câu” để thay bằng lượt mới.</span></div>}
-              <div className="dictation-navigation"><button onClick={() => selectSentence(current - 1)} disabled={current === 0}>← Câu trước</button><div><button onClick={confirmSentence} className="confirm-answer-button">Xác nhận câu</button>{current < sentences.length - 1 ? <button onClick={() => selectSentence(current + 1)} className="next-sentence-button">Câu tiếp →</button> : <button disabled={sending} onClick={finishLesson} className="finish-lesson-button">{sending ? 'Đang lưu…' : 'Hoàn thành bài'}</button>}</div></div>
+              <label htmlFor="dictation-answer" className="dictation-answer-label">{t('dictation.your_answer')}</label>
+              {mode === 'FULL' ? <textarea id="dictation-answer" value={answer} onChange={(event) => saveAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); confirmSentence(); } }} placeholder={t('dictation.placeholder_type')} rows={4} className="dictation-answer-input" /> : <FillBlanks key={`${sentence.id}-${fillReset}`} text={sentence.textContent} value={answer} onChange={saveAnswer} onConfirm={confirmSentence} />}
+              <div className="dictation-live-feedback"><span>{t('dictation.live_feedback')}</span>{liveScore && <span className="live-accuracy">{t('dictation.current_accuracy')} {liveScore.accuracy}%</span>}</div>
+              {scores[sentence.id] && <div className="dictation-confirmed-result"><p>{t('dictation.confirmed_sentence')} · {scores[sentence.id].accuracy}%</p></div>}
+              <div className="dictation-navigation">
+                <button
+                  type="button"
+                  onClick={() => selectSentence(current - 1)}
+                  disabled={current === 0}
+                  className="prev-sentence-button"
+                >
+                  {t('dictation.prev_btn')}
+                </button>
+                <div>
+                  <button
+                    type="button"
+                    onClick={confirmSentence}
+                    className="confirm-answer-button"
+                  >
+                    {t('dictation.confirm_btn')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectSentence(current + 1)}
+                    disabled={current === sentences.length - 1}
+                    className="next-sentence-button"
+                  >
+                    {t('dictation.next_btn')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="shadowing-completion-action mt-6">
+                <button
+                  type="button"
+                  onClick={finishLesson}
+                  disabled={sending || !dictationComplete}
+                >
+                  {sending ? t('dictation.saving') : t('dictation.finish_lesson_listening')}
+                </button>
+                {!dictationComplete && (
+                  <p>
+                    {lang === 'en'
+                      ? `${dictationRemaining} ${t('dictation.remaining_note')}`
+                      : `Còn ${dictationRemaining} ${t('dictation.remaining_note')}`}
+                  </p>
+                )}
+              </div>
             </> : shadowingSentence && <>
               <ShadowingPractice key={lesson.id} lessonId={lesson.id} sentence={shadowingSentence} activeWordIndex={karaokeWordIndex} isActive onCompleted={onShadowingCompleted} onScoreReset={onShadowingScoreReset} />
-              <div className="shadowing-completion-action">
-                <button type="button" onClick={finishShadowingLesson} disabled={!shadowingComplete}>Hoàn thành bài Luyện nói</button>
-                {!shadowingComplete && <p>Còn {shadowingRemaining} câu chưa được chấm. Ghi âm và gửi chấm AI từng câu để mở nút hoàn thành.</p>}
+              
+              {/* Shadowing Navigation Bar */}
+              <div className="dictation-navigation">
+                <button
+                  type="button"
+                  onClick={() => selectSentence(current - 1)}
+                  disabled={current === 0}
+                  className="prev-sentence-button"
+                >
+                  {t('dictation.prev_btn')}
+                </button>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => selectSentence(current + 1)}
+                    disabled={current === sentences.length - 1}
+                    className="next-sentence-button"
+                  >
+                    {t('dictation.next_btn')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="shadowing-completion-action mt-6">
+                <button
+                  type="button"
+                  onClick={finishShadowingLesson}
+                  disabled={!shadowingComplete}
+                >
+                  {t('shadowing.finish_lesson')}
+                </button>
+                {!shadowingComplete && (
+                  <p>
+                    {lang === 'en'
+                      ? `${shadowingRemaining} ${t('shadowing.remaining_note')}`
+                      : `Còn ${shadowingRemaining} ${t('shadowing.remaining_note')}`}
+                  </p>
+                )}
               </div>
             </>}
           </>}

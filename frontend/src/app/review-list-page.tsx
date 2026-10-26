@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { useLanguage } from '@/lib/i18n';
 
 export type PartOfSpeech = 'n' | 'v' | 'adj' | 'adv' | 'phrase' | 'prep' | 'conj' | 'other';
 
@@ -17,15 +18,15 @@ export type PersonalWord = {
 
 const STORAGE_KEY = 'shadowtation.personal_dictionary';
 
-export const POS_OPTIONS: Array<{ value: string; label: string; short: string; color: string }> = [
-  { value: 'n', label: 'Danh từ (noun)', short: 'n.', color: 'bg-amber-100 text-amber-800 border-amber-300' },
-  { value: 'v', label: 'Động từ (verb)', short: 'v.', color: 'bg-blue-100 text-blue-800 border-blue-300' },
-  { value: 'adj', label: 'Tính từ (adjective)', short: 'adj.', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-  { value: 'adv', label: 'Trạng từ (adverb)', short: 'adv.', color: 'bg-purple-100 text-purple-800 border-purple-300' },
-  { value: 'phrase', label: 'Cụm từ (phrase)', short: 'phrase', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
-  { value: 'prep', label: 'Giới từ (preposition)', short: 'prep.', color: 'bg-rose-100 text-rose-800 border-rose-300' },
-  { value: 'conj', label: 'Liên từ (conjunction)', short: 'conj.', color: 'bg-teal-100 text-teal-800 border-teal-300' },
-  { value: 'other', label: 'Khác (other)', short: 'khác', color: 'bg-slate-100 text-slate-700 border-slate-300' },
+export const POS_OPTIONS: Array<{ value: string; label: string; labelEn: string; short: string; color: string }> = [
+  { value: 'n', label: 'Danh từ (noun)', labelEn: 'Noun (n)', short: 'n.', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+  { value: 'v', label: 'Động từ (verb)', labelEn: 'Verb (v)', short: 'v.', color: 'bg-blue-100 text-blue-800 border-blue-300' },
+  { value: 'adj', label: 'Tính từ (adjective)', labelEn: 'Adjective (adj)', short: 'adj.', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+  { value: 'adv', label: 'Trạng từ (adverb)', labelEn: 'Adverb (adv)', short: 'adv.', color: 'bg-purple-100 text-purple-800 border-purple-300' },
+  { value: 'phrase', label: 'Cụm từ (phrase)', labelEn: 'Phrase', short: 'phrase', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
+  { value: 'prep', label: 'Giới từ (preposition)', labelEn: 'Preposition (prep)', short: 'prep.', color: 'bg-rose-100 text-rose-800 border-rose-300' },
+  { value: 'conj', label: 'Liên từ (conjunction)', labelEn: 'Conjunction (conj)', short: 'conj.', color: 'bg-teal-100 text-teal-800 border-teal-300' },
+  { value: 'other', label: 'Khác (other)', labelEn: 'Other', short: 'other', color: 'bg-slate-100 text-slate-700 border-slate-300' },
 ];
 
 export function getPosBadge(pos?: string) {
@@ -73,6 +74,20 @@ const DEFAULT_WORDS: PersonalWord[] = [
   },
 ];
 
+export function isUserPremium(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('student_profile');
+    if (raw) {
+      const u = JSON.parse(raw);
+      if (u?.role === 'PREMIUM_STUDENT' || u?.role === 'ADMIN' || u?.isPremium === true) return true;
+    }
+    return localStorage.getItem('shadowtation_tier') === 'PREMIUM';
+  } catch {
+    return false;
+  }
+}
+
 export function addWordToPersonalDictionary(
   word: string,
   meaning: string = '',
@@ -96,6 +111,11 @@ export function addWordToPersonalDictionary(
     const baseWord = cleanWord.replace(/\s*\([^)]*\)\s*/g, '').trim();
     const existingIndex = words.findIndex((item) => item.word.toLowerCase() === baseWord.toLowerCase());
 
+    // Enforce 20 words limit for Free account when adding a brand new word
+    if (existingIndex < 0 && !isUserPremium() && words.length >= 20) {
+      return false;
+    }
+
     if (existingIndex >= 0) {
       words[existingIndex].meaning = meaning || words[existingIndex].meaning;
       words[existingIndex].partOfSpeech = detectedPos || words[existingIndex].partOfSpeech || 'n';
@@ -106,8 +126,8 @@ export function addWordToPersonalDictionary(
         id: `pw-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         word: baseWord,
         partOfSpeech: detectedPos,
-        meaning: meaning || 'Từ cần ghi nhớ trong ngữ cảnh',
-        example: example || `Luyện tập từ "${baseWord}" thường xuyên để ghi nhớ lâu dài.`,
+        meaning: meaning || 'Vocabulary to remember in context',
+        example: example || `Practice the word "${baseWord}" frequently to remember long-term.`,
         addedAt: new Date().toISOString(),
         source,
       });
@@ -121,7 +141,9 @@ export function addWordToPersonalDictionary(
 }
 
 export default function ReviewListPage() {
+  const { lang } = useLanguage();
   const [words, setWords] = useState<PersonalWord[]>([]);
+  const [isPremium, setIsPremium] = useState(false);
   const [search, setSearch] = useState('');
   const [newWord, setNewWord] = useState('');
   const [newPos, setNewPos] = useState<string>('n');
@@ -138,11 +160,10 @@ export default function ReviewListPage() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          // Normalize existing words to make sure partOfSpeech exists
           const normalized = parsed.map((item: any) => ({
             ...item,
             partOfSpeech: item.partOfSpeech || 'n',
-            example: item.example || `Luyện tập từ "${item.word}" trong bài học.`,
+            example: item.example || (lang === 'en' ? `Practice "${item.word}" in context.` : `Luyện tập từ "${item.word}" trong bài học.`),
           }));
           setWords(normalized);
           return;
@@ -157,9 +178,18 @@ export default function ReviewListPage() {
 
   useEffect(() => {
     loadWords();
-    const handleUpdate = () => loadWords();
+    const checkTier = () => setIsPremium(isUserPremium());
+    checkTier();
+    const handleUpdate = () => {
+      loadWords();
+      checkTier();
+    };
     window.addEventListener('shadowtation:dictionary-updated', handleUpdate);
-    return () => window.removeEventListener('shadowtation:dictionary-updated', handleUpdate);
+    window.addEventListener('shadowtation:auth-change', checkTier);
+    return () => {
+      window.removeEventListener('shadowtation:dictionary-updated', handleUpdate);
+      window.removeEventListener('shadowtation:auth-change', checkTier);
+    };
   }, []);
 
   const showToast = (message: string) => {
@@ -172,19 +202,29 @@ export default function ReviewListPage() {
   const handleAddWord = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWord.trim()) return;
-    const ok = addWordToPersonalDictionary(newWord, newMeaning, newExample, 'Sổ tay', newPos);
+    if (!isPremium && words.length >= 20) {
+      showToast(lang === 'en' ? '⚠️ You have reached the 20-word limit on the Free plan. Upgrade to Premium for unlimited storage!' : '⚠️ Bạn đã dùng hết 20 từ của tài khoản Miễn phí. Hãy nâng cấp Premium để lưu không giới hạn!');
+      return;
+    }
+    const ok = addWordToPersonalDictionary(newWord, newMeaning, newExample, lang === 'en' ? 'Notebook' : 'Sổ tay', newPos);
     if (ok) {
       loadWords();
       setNewWord('');
       setNewPos('n');
       setNewMeaning('');
       setNewExample('');
-      showToast('Đã thêm từ vào Sổ từ vựng cá nhân thành công!');
+      showToast(lang === 'en' ? 'Saved word to personal vocabulary notebook!' : 'Đã thêm từ vào Sổ từ vựng cá nhân thành công!');
+    } else {
+      showToast(lang === 'en' ? '⚠️ Cannot add: Free plan limit is 20 words. Please upgrade to Premium!' : '⚠️ Không thể thêm: Tài khoản Miễn phí giới hạn tối đa 20 từ vựng. Vui lòng nâng cấp Premium!');
     }
   };
 
   const handleQuickPaste = () => {
     if (!pasteBox.trim()) return;
+    if (!isPremium && words.length >= 20) {
+      showToast(lang === 'en' ? '⚠️ Free plan reached 20-word limit. Upgrade to Premium for unlimited storage!' : '⚠️ Tài khoản Miễn phí đã đạt giới hạn 20 từ. Nâng cấp Premium để lưu không giới hạn!');
+      return;
+    }
     const lines = pasteBox.split('\n');
     let addedCount = 0;
     lines.forEach((line) => {
@@ -195,7 +235,6 @@ export default function ReviewListPage() {
       let pos = 'n';
       let m = '';
 
-      // Pattern: word - loại từ - nghĩa
       if (trimmed.includes('-')) {
         const parts = trimmed.split('-').map((p) => p.trim());
         if (parts.length >= 3) {
@@ -217,7 +256,7 @@ export default function ReviewListPage() {
       }
 
       if (w) {
-        addWordToPersonalDictionary(w, m, '', 'Paste nhanh', pos);
+        addWordToPersonalDictionary(w, m, '', lang === 'en' ? 'Quick Paste' : 'Paste nhanh', pos);
         addedCount++;
       }
     });
@@ -226,7 +265,7 @@ export default function ReviewListPage() {
       loadWords();
       setPasteBox('');
       setShowPasteModal(false);
-      showToast(`Đã thêm thành công ${addedCount} từ vào Sổ từ vựng!`);
+      showToast(lang === 'en' ? `Added ${addedCount} words to vocabulary notebook!` : `Đã thêm thành công ${addedCount} từ vào Sổ từ vựng!`);
     }
   };
 
@@ -235,7 +274,7 @@ export default function ReviewListPage() {
     setWords(next);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     setSelectedIds((prev) => prev.filter((item) => item !== id));
-    showToast('Đã xóa từ khỏi Sổ từ vựng cá nhân.');
+    showToast(lang === 'en' ? 'Deleted word from notebook.' : 'Đã xóa từ khỏi Sổ từ vựng cá nhân.');
   };
 
   const handleDeleteSelected = () => {
@@ -245,7 +284,7 @@ export default function ReviewListPage() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     const count = selectedIds.length;
     setSelectedIds([]);
-    showToast(`Đã xóa ${count} từ đã chọn khỏi Sổ từ vựng.`);
+    showToast(lang === 'en' ? `Deleted ${count} selected words from notebook.` : `Đã xóa ${count} từ đã chọn khỏi Sổ từ vựng.`);
   };
 
   const toggleSelectAll = () => {
@@ -278,24 +317,28 @@ export default function ReviewListPage() {
 
   return (
     <main className="mx-auto min-h-[calc(100vh-76px)] max-w-7xl px-5 py-8 text-slate-900 md:px-8 md:py-10">
-      {/* Nút quay lại trang chủ dạng khung button */}
+      {/* Back button */}
       <div className="mb-6">
         <Link
           href="/"
           className="inline-flex items-center gap-2 rounded-xl border-2 border-slate-300 bg-white px-5 py-2.5 text-base font-bold text-slate-700 shadow-sm transition hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700"
         >
-          <span aria-hidden="true" className="text-lg">←</span> Quay lại trang chủ
+          <span aria-hidden="true" className="text-lg">←</span> {lang === 'en' ? 'Back to Home' : 'Quay lại trang chủ'}
         </Link>
       </div>
 
       <header className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
         <div>
-          <span className="text-base font-bold uppercase tracking-wider text-blue-600">Sổ tay học tập cá nhân</span>
+          <span className="text-base font-bold uppercase tracking-wider text-blue-600">
+            {lang === 'en' ? 'Personal Study Notebook' : 'Sổ tay học tập cá nhân'}
+          </span>
           <h1 className="mt-1 text-3xl font-black text-slate-900 md:text-4xl">
-            Sổ từ vựng cá nhân
+            {lang === 'en' ? 'Personal Vocabulary Notebook' : 'Sổ từ vựng cá nhân'}
           </h1>
           <p className="mt-2 text-lg text-slate-600">
-            Quản lý từ vựng riêng của bạn: lưu đầy đủ Từ tiếng Anh, Loại từ (n, v, adj...), Nghĩa tiếng Việt, Câu ví dụ ngữ cảnh và Phát âm.
+            {lang === 'en'
+              ? 'Manage your personalized vocabulary: English word, Part of Speech (n, v, adj...), definition, context sentence, and native pronunciation.'
+              : 'Quản lý từ vựng riêng của bạn: lưu đầy đủ Từ tiếng Anh, Loại từ (n, v, adj...), Nghĩa tiếng Việt, Câu ví dụ ngữ cảnh và Phát âm.'}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -304,30 +347,34 @@ export default function ReviewListPage() {
             onClick={() => setShowPasteModal(true)}
             className="inline-flex min-h-12 items-center gap-2 rounded-xl border-2 border-blue-300 bg-blue-50 px-5 py-2.5 text-base font-bold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:border-blue-400"
           >
-            📋 Dán nhanh từ clipboard
+            📋 {lang === 'en' ? 'Quick Paste from Clipboard' : 'Dán nhanh từ clipboard'}
           </button>
         </div>
       </header>
 
-      {/* Grid: Form thêm từ + Danh sách từ */}
+      {/* Grid: Add Word Form + Word List */}
       <div className="grid gap-8 lg:grid-cols-[1.1fr_1.9fr]">
-        {/* Form ghi chú từ mới */}
+        {/* New word form */}
         <section className="rounded-3xl border-2 border-slate-200 bg-white p-7 shadow-sm flex flex-col justify-between">
           <div>
-            <h2 className="text-2xl font-extrabold text-slate-900">Thêm từ mới vào sổ</h2>
+            <h2 className="text-2xl font-extrabold text-slate-900">
+              {lang === 'en' ? 'Add New Word to Notebook' : 'Thêm từ mới vào sổ'}
+            </h2>
             <p className="mt-1 text-base text-slate-500">
-              Ghi lại từ tiếng Anh, chọn loại từ, nghĩa tiếng Việt và câu ví dụ để ôn tập lâu dài.
+              {lang === 'en'
+                ? 'Save English words, select part of speech, meaning, and context examples for long-term retention.'
+                : 'Ghi lại từ tiếng Anh, chọn loại từ, nghĩa tiếng Việt và câu ví dụ để ôn tập lâu dài.'}
             </p>
             <form onSubmit={handleAddWord} className="mt-6 space-y-5">
               <div>
                 <label htmlFor="new-word-input" className="block text-base font-bold text-slate-700">
-                  Từ vựng tiếng Anh <span className="text-rose-500">*</span>
+                  {lang === 'en' ? 'English Word' : 'Từ vựng tiếng Anh'} <span className="text-rose-500">*</span>
                 </label>
                 <input
                   id="new-word-input"
                   type="text"
                   required
-                  placeholder="Ví dụ: persistent, obstacle, ..."
+                  placeholder={lang === 'en' ? 'e.g. persistent, obstacle, ...' : 'Ví dụ: persistent, obstacle, ...'}
                   value={newWord}
                   onChange={(e) => setNewWord(e.target.value)}
                   className="mt-2 w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-base font-semibold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
@@ -336,7 +383,7 @@ export default function ReviewListPage() {
 
               <div>
                 <label htmlFor="new-pos-select" className="block text-base font-bold text-slate-700">
-                  Loại từ vựng (Part of Speech) <span className="text-rose-500">*</span>
+                  {lang === 'en' ? 'Part of Speech' : 'Loại từ vựng (Part of Speech)'} <span className="text-rose-500">*</span>
                 </label>
                 <select
                   id="new-pos-select"
@@ -346,7 +393,7 @@ export default function ReviewListPage() {
                 >
                   {POS_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
-                      {opt.label} ({opt.short})
+                      {lang === 'en' ? opt.labelEn : opt.label} ({opt.short})
                     </option>
                   ))}
                 </select>
@@ -354,12 +401,12 @@ export default function ReviewListPage() {
 
               <div>
                 <label htmlFor="new-meaning-input" className="block text-base font-bold text-slate-700">
-                  Nghĩa tiếng Việt
+                  {lang === 'en' ? 'Definition / Meaning' : 'Nghĩa tiếng Việt'}
                 </label>
                 <input
                   id="new-meaning-input"
                   type="text"
-                  placeholder="Ví dụ: kiên trì, chướng ngại vật, ..."
+                  placeholder={lang === 'en' ? 'e.g. continuing firmly or obstinately' : 'Ví dụ: kiên trì, chướng ngại vật, ...'}
                   value={newMeaning}
                   onChange={(e) => setNewMeaning(e.target.value)}
                   className="mt-2 w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-base outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
@@ -368,12 +415,12 @@ export default function ReviewListPage() {
 
               <div>
                 <label htmlFor="new-example-input" className="block text-base font-bold text-slate-700">
-                  Câu ví dụ (ngữ cảnh)
+                  {lang === 'en' ? 'Example Sentence (Context)' : 'Câu ví dụ (ngữ cảnh)'}
                 </label>
                 <textarea
                   id="new-example-input"
                   rows={3}
-                  placeholder="Ví dụ: Practice makes perfect."
+                  placeholder={lang === 'en' ? 'e.g. Practice makes perfect.' : 'Ví dụ: Practice makes perfect.'}
                   value={newExample}
                   onChange={(e) => setNewExample(e.target.value)}
                   className="mt-2 w-full rounded-xl border-2 border-slate-200 p-3.5 text-base outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
@@ -384,27 +431,39 @@ export default function ReviewListPage() {
                 type="submit"
                 className="w-full rounded-xl bg-blue-600 px-5 py-4 text-base font-bold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg"
               >
-                + Lưu vào sổ từ vựng
+                + {lang === 'en' ? 'Save to Notebook' : 'Lưu vào sổ từ vựng'}
               </button>
             </form>
           </div>
 
           <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-sm text-blue-900 leading-relaxed">
-            <strong>💡 Định dạng dán nhanh:</strong> Bạn có thể dán theo định dạng{' '}
+            <strong>💡 {lang === 'en' ? 'Quick Paste Format:' : 'Định dạng dán nhanh:'}</strong>{' '}
+            {lang === 'en' ? 'Paste lines matching ' : 'Bạn có thể dán theo định dạng '}
             <code className="rounded bg-white px-1.5 py-0.5 border border-blue-200 font-bold text-blue-700">
-              word - loại từ - nghĩa
+              word - pos - meaning
             </code>{' '}
-            (Ví dụ: <em className="text-slate-700">resilience - n - sự kiên cường</em>).
+            ({lang === 'en' ? 'Example: ' : 'Ví dụ: '}
+            <em className="text-slate-700">resilience - n - mental toughness</em>).
           </div>
         </section>
 
-        {/* Danh sách từ vựng */}
+        {/* Word List */}
         <section className="rounded-3xl border-2 border-slate-200 bg-white p-7 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-5">
             <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-extrabold text-slate-900">Danh sách từ đã lưu</h2>
-              <span className="rounded-full bg-blue-100 px-3.5 py-1 text-base font-black text-blue-800">
-                {words.length} từ
+              <h2 className="text-2xl font-extrabold text-slate-900">
+                {lang === 'en' ? 'Saved Vocabulary' : 'Danh sách từ đã lưu'}
+              </h2>
+              <span
+                className={`rounded-full px-3.5 py-1 text-sm font-black ${
+                  isPremium
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : 'bg-blue-100 text-blue-800'
+                }`}
+              >
+                {isPremium
+                  ? `${words.length} ${lang === 'en' ? 'words · Unlimited (★ VIP)' : 'từ · Không giới hạn (★ VIP)'}`
+                  : `${words.length}/20 ${lang === 'en' ? 'words (Free)' : 'từ (Miễn phí)'}`}
               </span>
             </div>
 
@@ -414,7 +473,7 @@ export default function ReviewListPage() {
                 onClick={handleDeleteSelected}
                 className="inline-flex items-center gap-1.5 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-2 text-base font-bold text-rose-700 hover:bg-rose-100 transition"
               >
-                🗑️ Xóa {selectedIds.length} từ đã chọn
+                🗑️ {lang === 'en' ? `Delete ${selectedIds.length} selected` : `Xóa ${selectedIds.length} từ đã chọn`}
               </button>
             )}
           </div>
@@ -424,7 +483,7 @@ export default function ReviewListPage() {
             <div className="relative flex-1 min-w-[220px]">
               <input
                 type="text"
-                placeholder="Tìm theo từ, nghĩa hoặc loại từ (n, v, adj...)..."
+                placeholder={lang === 'en' ? 'Search by word, meaning, or part of speech (n, v, adj...)...' : 'Tìm theo từ, nghĩa hoặc loại từ (n, v, adj...)...'}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-base outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
@@ -448,12 +507,12 @@ export default function ReviewListPage() {
                   onChange={toggleSelectAll}
                   className="h-5 w-5 rounded accent-blue-600"
                 />
-                Chọn tất cả
+                {lang === 'en' ? 'Select All' : 'Chọn tất cả'}
               </label>
             )}
           </div>
 
-          {/* Word List with 100% synchronized standard fields */}
+          {/* Word List Items */}
           <div className="mt-6 space-y-4 max-h-[620px] overflow-y-auto pr-1">
             {filteredWords.map((item) => {
               const isSelected = selectedIds.includes(item.id);
@@ -478,7 +537,7 @@ export default function ReviewListPage() {
                       className="mt-1 h-5 w-5 rounded accent-blue-600 shrink-0"
                     />
                     <div className="min-w-0 flex-1">
-                      {/* 1. Từ vựng tiếng Anh + Loại từ badge + Nút phát âm 🔊 */}
+                      {/* Word + POS + Audio */}
                       <div className="flex flex-wrap items-center gap-2.5">
                         <strong className="text-xl font-black text-slate-900 tracking-tight">{item.word}</strong>
                         <span className={`inline-flex items-center rounded-lg border px-2.5 py-0.5 text-xs font-black uppercase ${badge.color}`}>
@@ -487,7 +546,7 @@ export default function ReviewListPage() {
                         <button
                           type="button"
                           onClick={() => speakWord(item.word)}
-                          title={`Nghe phát âm từ "${item.word}"`}
+                          title={lang === 'en' ? `Listen to "${item.word}"` : `Nghe phát âm từ "${item.word}"`}
                           className="grid h-8 w-8 place-items-center rounded-xl bg-blue-100 text-blue-700 hover:bg-blue-200 transition shadow-sm"
                         >
                           🔊
@@ -499,19 +558,19 @@ export default function ReviewListPage() {
                         )}
                       </div>
 
-                      {/* 2. Nghĩa tiếng Việt */}
+                      {/* Meaning */}
                       <p className="mt-1.5 text-base font-bold text-slate-800">
-                        {item.meaning || 'Chưa có nghĩa'}
+                        {item.meaning || (lang === 'en' ? 'No definition provided' : 'Chưa có nghĩa')}
                       </p>
 
-                      {/* 3. Câu ví dụ (ngữ cảnh) */}
+                      {/* Example */}
                       {item.example ? (
                         <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-sm text-slate-600">
-                          <span className="font-semibold text-slate-700">Ngữ cảnh:</span> &ldquo;{item.example}&rdquo;
+                          <span className="font-semibold text-slate-700">{lang === 'en' ? 'Context:' : 'Ngữ cảnh:'}</span> &ldquo;{item.example}&rdquo;
                         </div>
                       ) : (
                         <div className="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-2 text-xs text-slate-400">
-                          Chưa có câu ví dụ
+                          {lang === 'en' ? 'No example sentence' : 'Chưa có câu ví dụ'}
                         </div>
                       )}
                     </div>
@@ -521,7 +580,7 @@ export default function ReviewListPage() {
                     <button
                       type="button"
                       onClick={() => handleDeleteWord(item.id)}
-                      title="Xóa từ này khỏi sổ"
+                      title={lang === 'en' ? 'Delete this word' : 'Xóa từ này khỏi sổ'}
                       className="rounded-xl border border-slate-200 bg-white p-2.5 text-base text-slate-400 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 transition shadow-sm"
                     >
                       🗑️
@@ -535,7 +594,9 @@ export default function ReviewListPage() {
               <div className="rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 p-12 text-center text-slate-500">
                 <span className="text-4xl block mb-2">📚</span>
                 <p className="text-lg font-bold">
-                  {words.length === 0 ? 'Sổ từ vựng của bạn đang trống. Thêm từ đầu tiên ở bên trái!' : 'Không tìm thấy từ phù hợp với từ khóa.'}
+                  {words.length === 0
+                    ? (lang === 'en' ? 'Your vocabulary notebook is empty. Add your first word on the left!' : 'Sổ từ vựng của bạn đang trống. Thêm từ đầu tiên ở bên trái!')
+                    : (lang === 'en' ? 'No words matching your search.' : 'Không tìm thấy từ phù hợp với từ khóa.')}
                 </p>
               </div>
             )}
@@ -543,23 +604,25 @@ export default function ReviewListPage() {
         </section>
       </div>
 
-      {/* Modal dán nhanh từ clipboard */}
+      {/* Quick Paste Modal */}
       {showPasteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-3xl border-2 border-slate-200 bg-white p-7 shadow-2xl">
-            <h3 className="text-2xl font-extrabold text-slate-900">Dán nhanh từ vựng</h3>
+            <h3 className="text-2xl font-extrabold text-slate-900">
+              {lang === 'en' ? 'Quick Paste Vocabulary' : 'Dán nhanh từ vựng'}
+            </h3>
             <p className="mt-2 text-base text-slate-600">
-              Dán danh sách từ của bạn vào đây. Định dạng khuyên dùng:
+              {lang === 'en' ? 'Paste your list of words here. Recommended format:' : 'Dán danh sách từ của bạn vào đây. Định dạng khuyên dùng:'}
               <br />
               <code className="text-sm font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                word - loại từ - nghĩa
+                word - pos - meaning
               </code>
             </p>
             <textarea
               rows={6}
               value={pasteBox}
               onChange={(e) => setPasteBox(e.target.value)}
-              placeholder="resilience - n - sự kiên cường&#10;fluent - adj - lưu loát, trôi chảy&#10;practice - v - luyện tập, thực hành"
+              placeholder="resilience - n - mental toughness&#10;fluent - adj - able to express easily&#10;practice - v - perform repeatedly"
               className="mt-4 w-full rounded-2xl border-2 border-slate-200 p-4 text-base font-mono outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
             />
             <div className="mt-6 flex justify-end gap-3">
@@ -568,7 +631,7 @@ export default function ReviewListPage() {
                 onClick={() => setShowPasteModal(false)}
                 className="rounded-xl border-2 border-slate-300 px-5 py-2.5 text-base font-bold text-slate-600 hover:bg-slate-100"
               >
-                Hủy
+                {lang === 'en' ? 'Cancel' : 'Hủy'}
               </button>
               <button
                 type="button"
@@ -576,14 +639,14 @@ export default function ReviewListPage() {
                 disabled={!pasteBox.trim()}
                 className="rounded-xl bg-blue-600 px-6 py-2.5 text-base font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50"
               >
-                Nhập vào sổ từ
+                {lang === 'en' ? 'Import to Notebook' : 'Nhập vào sổ từ'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Redesigned Toast thông báo hiện đại, đẹp, thân thiện ở góc phải bên dưới màn hình */}
+      {/* Modern Toast Notification */}
       {toastMessage && (
         <div
           role="status"
@@ -593,14 +656,16 @@ export default function ReviewListPage() {
             ✓
           </div>
           <div>
-            <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-600">Sổ từ vựng cá nhân</p>
+            <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-600">
+              {lang === 'en' ? 'Personal Notebook' : 'Sổ từ vựng cá nhân'}
+            </p>
             <p className="text-base font-bold text-slate-800">{toastMessage}</p>
           </div>
           <button
             type="button"
             onClick={() => setToastMessage(null)}
             className="ml-2 text-slate-400 hover:text-slate-600 font-bold p-1"
-            aria-label="Đóng thông báo"
+            aria-label={lang === 'en' ? 'Close' : 'Đóng thông báo'}
           >
             ✕
           </button>

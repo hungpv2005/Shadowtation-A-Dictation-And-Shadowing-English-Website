@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useLanguage } from '@/lib/i18n';
 
-const PREMIUM_FEATURES = [
+const PREMIUM_FEATURES_VI = [
   {
     icon: '🎙️',
     title: 'Chấm điểm phát âm AI không giới hạn',
@@ -48,7 +49,52 @@ const PREMIUM_FEATURES = [
   },
 ];
 
-const COMPARISON_ROWS = [
+const PREMIUM_FEATURES_EN = [
+  {
+    icon: '🎙️',
+    title: 'Unlimited AI Pronunciation Scoring',
+    badge: 'Exclusive AI Engine',
+    desc: 'Real-time assessment of Accuracy, Fluency, Intonation, and Completeness for each spoken sentence.',
+    detail: 'Deep syllable and phoneme analysis highlighting correct (green), suboptimal (yellow), or missing endings (red) with tongue placement tips.',
+  },
+  {
+    icon: '🎬',
+    title: 'Unlimited Custom YouTube & Podcast Import',
+    badge: 'Custom Lessons',
+    desc: 'Paste any YouTube video, TED Talk, BBC news report, or favorite podcast link.',
+    detail: 'System automatically segments subtitles into clean sentences and generates interactive Dictation and Shadowing exercises instantly.',
+  },
+  {
+    icon: '🧠',
+    title: 'Smart Vocabulary Notebook & Spaced Repetition (SRS)',
+    badge: 'Permanent Retention',
+    desc: 'Save unlimited vocabulary with parts of speech (n, v, adj, adv), real context sentences, and native audio.',
+    detail: 'Smart forgetting curve algorithm reminds you to review challenging words at peak neuro-retention times.',
+  },
+  {
+    icon: '⚡',
+    title: 'Smooth Pitch-Preserved Speed & Pro Speech Mode',
+    badge: 'Flexible',
+    desc: 'Slow audio down from 0.5x, 0.75x to 1.25x with zero distortion or unnatural pitch changes.',
+    detail: 'Toggle international IPA phonetics, translations, and seamless A-B loop for challenging sentences.',
+  },
+  {
+    icon: '📊',
+    title: 'In-Depth Analytics & Personalized Progress Reports',
+    badge: 'Tracking',
+    desc: 'Monitor daily study time, average scores, study streaks, and accumulated hours over time.',
+    detail: 'Weekly error leaderboards spotlighting your most frequent mispronunciations for rapid mastery.',
+  },
+  {
+    icon: '🛡️',
+    title: '100% Ad-Free & 24/7 VIP Priority Support',
+    badge: 'Premium Experience',
+    desc: 'Stay in the zone with zero ads, zero interruptions, and distraction-free learning.',
+    detail: 'Enjoy priority server bandwidth, 3x faster audio streaming, and 24/7 technical assistance.',
+  },
+];
+
+const COMPARISON_ROWS_VI = [
   { feature: 'Số câu chấm phát âm AI mỗi ngày', free: '5 câu / ngày', premium: 'Không giới hạn ⚡' },
   { feature: 'Tự nhập video YouTube & Podcast của riêng bạn', free: 'Tối đa 2 bài ngắn', premium: 'Không giới hạn bài học 🎬' },
   { feature: 'Phân tích chi tiết âm vị & Ngữ điệu sóng âm', free: 'Chấm điểm tổng quan', premium: 'Chi tiết từng âm vị + Mẹo phát âm 🎙️' },
@@ -58,7 +104,56 @@ const COMPARISON_ROWS = [
   { feature: 'Quảng cáo & Tốc độ tải máy chủ', free: 'Băng thông tiêu chuẩn', premium: 'Không quảng cáo 100% + Máy chủ VIP 🛡️' },
 ];
 
+const COMPARISON_ROWS_EN = [
+  { feature: 'Daily AI Pronunciation Scoring', free: '5 sentences / day', premium: 'Unlimited ⚡' },
+  { feature: 'Custom YouTube & Podcast Import', free: 'Up to 2 short clips', premium: 'Unlimited lessons 🎬' },
+  { feature: 'Phoneme Breakdown & Speech Waveform', free: 'Overall score only', premium: 'Detailed phonemes + Pronunciation tips 🎙️' },
+  { feature: 'Personal Vocabulary Notebook & SRS', free: 'Limited to 20 words', premium: 'Unlimited + Spaced Repetition algorithm 🧠' },
+  { feature: 'Pitch-Preserved Playback Speed', free: 'Fixed 1.0x', premium: '0.5x – 1.5x smooth playback ⚡' },
+  { feature: 'Full International Lesson Library (A1 – C2)', free: 'Basic lessons', premium: '100% unlocked full library 🌟' },
+  { feature: 'Ads & Server Priority', free: 'Standard bandwidth', premium: '100% Ad-Free + VIP High-Speed Servers 🛡️' },
+];
+
+const FAQS_VI = [
+  {
+    q: 'Tôi có thể tự dán video YouTube bất kỳ không?',
+    a: 'Có, bạn có thể dán bất kỳ link video nào có phụ đề tiếng Anh (kể cả phụ đề tự động của YouTube). AI sẽ đồng bộ từng câu để bạn luyện tập.',
+  },
+  {
+    q: 'AI chấm phát âm hoạt động chính xác thế nào?',
+    a: 'Hệ thống phân tích giọng nói sử dụng mô hình học sâu đối chiếu phát âm của bạn với dữ liệu người bản ngữ chuẩn, phát hiện từng nguyên âm và phụ âm lệch chuẩn.',
+  },
+  {
+    q: 'Tôi có được hoàn tiền nếu không phù hợp không?',
+    a: 'Chúng tôi hỗ trợ chính sách hoàn tiền 100% trong 7 ngày đầu nếu bạn cảm thấy chương trình không giúp ích cho tiến bộ tiếng Anh của mình.',
+  },
+  {
+    q: 'Tôi có thể hủy gia hạn gói cước bất cứ lúc nào không?',
+    a: 'Hoàn toàn có thể. Bạn có thể tự quản lý hoặc hủy gói trong trang Quản lý tài khoản với 1 cú click chuột mà không có bất kỳ khoản phí ẩn nào.',
+  },
+];
+
+const FAQS_EN = [
+  {
+    q: 'Can I import any YouTube video of my choice?',
+    a: 'Yes, you can paste any YouTube link with English subtitles (including YouTube auto-generated captions). Our AI will align every sentence for your practice.',
+  },
+  {
+    q: 'How accurate is the AI pronunciation assessment?',
+    a: 'Our speech engine uses deep learning models cross-referenced against thousands of native speakers, detecting individual vowel, consonant, and stress deviations.',
+  },
+  {
+    q: 'Is there a refund policy if it is not right for me?',
+    a: 'Yes, we provide a 100% 7-day money-back guarantee if you feel the platform does not help boost your English communication progress.',
+  },
+  {
+    q: 'Can I cancel my subscription renewal anytime?',
+    a: 'Absolutely. You can manage or cancel your subscription at any time with one click in your account settings without any hidden fees.',
+  },
+];
+
 export default function SubscriptionPage() {
+  const { lang } = useLanguage();
   const [isPremium, setIsPremium] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<'MONTHLY' | 'YEARLY' | 'LIFETIME'>('YEARLY');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -86,7 +181,7 @@ export default function SubscriptionPage() {
       localStorage.setItem('shadowtation_tier', 'PREMIUM');
       try {
         const raw = localStorage.getItem('student_profile');
-        const profile = raw ? JSON.parse(raw) : { name: 'Học viên', email: 'student@example.com' };
+        const profile = raw ? JSON.parse(raw) : { name: 'Student', email: 'student@example.com' };
         profile.role = 'PREMIUM_STUDENT';
         profile.isPremium = true;
         profile.premiumExpiredAt = new Date(Date.now() + 365 * 86400000).toISOString();
@@ -94,7 +189,7 @@ export default function SubscriptionPage() {
       } catch {}
       setIsPremium(true);
       window.dispatchEvent(new Event('shadowtation:auth-change'));
-      setToastMessage('🎉 Chúc mừng! Bạn đã nâng cấp thành công gói Premium.');
+      setToastMessage(lang === 'en' ? '🎉 Congratulations! You have successfully upgraded to Premium.' : '🎉 Chúc mừng! Bạn đã nâng cấp thành công gói Premium.');
     } else {
       localStorage.removeItem('shadowtation_tier');
       try {
@@ -108,7 +203,7 @@ export default function SubscriptionPage() {
       } catch {}
       setIsPremium(false);
       window.dispatchEvent(new Event('shadowtation:auth-change'));
-      setToastMessage('Đã chuyển về tài khoản Miễn phí để kiểm thử.');
+      setToastMessage(lang === 'en' ? 'Switched to Free account for testing.' : 'Đã chuyển về tài khoản Miễn phí để kiểm thử.');
     }
 
     setTimeout(() => {
@@ -116,15 +211,19 @@ export default function SubscriptionPage() {
     }, 4000);
   };
 
+  const features = lang === 'en' ? PREMIUM_FEATURES_EN : PREMIUM_FEATURES_VI;
+  const comparison = lang === 'en' ? COMPARISON_ROWS_EN : COMPARISON_ROWS_VI;
+  const faqs = lang === 'en' ? FAQS_EN : FAQS_VI;
+
   return (
     <main className="mx-auto min-h-[calc(100vh-76px)] max-w-6xl px-4 sm:px-6 lg:px-8 py-10 text-slate-900">
-      {/* Nút quay lại trang chủ dạng khung button */}
+      {/* Back button */}
       <div className="mb-6">
         <Link
           href="/"
           className="inline-flex items-center gap-2 rounded-xl border-2 border-slate-300 bg-white px-5 py-2.5 text-base font-bold text-slate-700 shadow-sm transition hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700"
         >
-          <span aria-hidden="true" className="text-lg">←</span> Quay lại trang chủ
+          <span aria-hidden="true" className="text-lg">←</span> {lang === 'en' ? 'Back to Home' : 'Quay lại trang chủ'}
         </Link>
       </div>
 
@@ -132,27 +231,29 @@ export default function SubscriptionPage() {
       <header className="rounded-3xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 via-white to-blue-50 p-8 sm:p-12 shadow-md relative overflow-hidden mb-12">
         <div className="relative z-10 max-w-3xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-100/80 px-4 py-1 text-sm font-extrabold text-amber-900 mb-4 shadow-sm">
-            <span>⭐ SHADOWTATION PREMIUM VIP</span>
+            <span>⭐ {lang === 'en' ? 'SHADOWTATION PREMIUM VIP' : 'SHADOWTATION PREMIUM VIP'}</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight leading-tight">
-            Nâng tầm phản xạ tiếng Anh cùng trí tuệ nhân tạo AI
+            {lang === 'en' ? 'Elevate Your English Reflexes with AI' : 'Nâng tầm phản xạ tiếng Anh cùng trí tuệ nhân tạo AI'}
           </h1>
           <p className="mt-4 text-lg sm:text-xl text-slate-700 leading-relaxed font-medium">
-            Mở khóa khả năng luyện nghe chép chính tả và nói nhại không giới hạn. Tự động sửa lỗi phát âm từng âm tiết và lưu trữ từ vựng riêng của bạn mãi mãi.
+            {lang === 'en'
+              ? 'Unlock unlimited dictation and shadowing practice. Automatic syllable-level pronunciation correction and permanent personal vocabulary retention.'
+              : 'Mở khóa khả năng luyện nghe chép chính tả và nói nhại không giới hạn. Tự động sửa lỗi phát âm từng âm tiết và lưu trữ từ vựng riêng của bạn mãi mãi.'}
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-4">
             {isPremium ? (
               <div className="flex flex-wrap items-center gap-3">
                 <span className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-6 py-3.5 text-base font-black text-white shadow-lg shadow-amber-500/25">
-                  ✓ Tài khoản của bạn đang là VIP Premium
+                  ✓ {lang === 'en' ? 'Your account is VIP Premium' : 'Tài khoản của bạn đang là VIP Premium'}
                 </span>
                 <button
                   type="button"
                   onClick={() => handleToggleTier(false)}
                   className="rounded-2xl border-2 border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-600 hover:bg-slate-100 transition"
                 >
-                  (Kiểm thử: Chuyển về Miễn phí)
+                  {lang === 'en' ? '(Test: Switch to Free)' : '(Kiểm thử: Chuyển về Miễn phí)'}
                 </button>
               </div>
             ) : (
@@ -162,10 +263,10 @@ export default function SubscriptionPage() {
                   onClick={() => handleToggleTier(true)}
                   className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-lg font-black text-white shadow-xl shadow-blue-600/30 hover:from-blue-700 hover:to-indigo-700 transition hover:scale-105"
                 >
-                  ⭐ Kích hoạt trải nghiệm Premium ngay
+                  ⭐ {lang === 'en' ? 'Activate Premium Access Now' : 'Kích hoạt trải nghiệm Premium ngay'}
                 </button>
                 <span className="text-sm font-semibold text-slate-500">
-                  Thử nghiệm tính năng ngay không cần thẻ tín dụng
+                  {lang === 'en' ? 'Instant test access, no credit card required' : 'Thử nghiệm tính năng ngay không cần thẻ tín dụng'}
                 </span>
               </div>
             )}
@@ -173,20 +274,24 @@ export default function SubscriptionPage() {
         </div>
       </header>
 
-      {/* 6 Tính năng cốt lõi của Premium */}
+      {/* 6 Core Features */}
       <section className="mb-14">
         <div className="text-center max-w-2xl mx-auto mb-10">
-          <span className="text-sm font-extrabold uppercase tracking-wider text-blue-600">Đặc quyền cao cấp</span>
+          <span className="text-sm font-extrabold uppercase tracking-wider text-blue-600">
+            {lang === 'en' ? 'Exclusive Privileges' : 'Đặc quyền cao cấp'}
+          </span>
           <h2 className="mt-2 text-3xl font-black text-slate-900 tracking-tight">
-            Gói Premium bao gồm những gì?
+            {lang === 'en' ? 'What is included in Premium?' : 'Gói Premium bao gồm những gì?'}
           </h2>
           <p className="mt-2 text-base text-slate-600">
-            Mọi công cụ bạn cần để bứt phá kỹ năng Nghe và Nói tiếng Anh từ cơ bản đến lưu loát như người bản xứ.
+            {lang === 'en'
+              ? 'Every tool you need to master English listening and speaking from fundamentals to native fluency.'
+              : 'Mọi công cụ bạn cần để bứt phá kỹ năng Nghe và Nói tiếng Anh từ cơ bản đến lưu loát như người bản xứ.'}
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {PREMIUM_FEATURES.map((item, idx) => (
+          {features.map((item, idx) => (
             <article
               key={idx}
               className="rounded-3xl border-2 border-slate-200 bg-white p-6 shadow-sm hover:border-blue-300 hover:shadow-md transition flex flex-col justify-between"
@@ -218,15 +323,19 @@ export default function SubscriptionPage() {
         </div>
       </section>
 
-      {/* Bảng so sánh Miễn phí vs. Premium */}
+      {/* Comparison Table */}
       <section className="mb-14 rounded-3xl border-2 border-slate-200 bg-white p-6 sm:p-10 shadow-sm overflow-hidden">
         <div className="text-center max-w-2xl mx-auto mb-8">
-          <span className="text-sm font-extrabold uppercase tracking-wider text-indigo-600">So sánh quyền lợi</span>
+          <span className="text-sm font-extrabold uppercase tracking-wider text-indigo-600">
+            {lang === 'en' ? 'Plan Comparison' : 'So sánh quyền lợi'}
+          </span>
           <h2 className="mt-1 text-3xl font-black text-slate-900 tracking-tight">
-            Tài khoản Miễn phí vs. Gói Premium
+            {lang === 'en' ? 'Free Account vs. Premium Plan' : 'Tài khoản Miễn phí vs. Gói Premium'}
           </h2>
           <p className="mt-2 text-base text-slate-600">
-            Xem sự khác biệt rõ rệt để lựa chọn phiên bản phù hợp nhất với mục tiêu học của bạn.
+            {lang === 'en'
+              ? 'See the clear difference to pick the version that fits your learning goals.'
+              : 'Xem sự khác biệt rõ rệt để lựa chọn phiên bản phù hợp nhất với mục tiêu học của bạn.'}
           </p>
         </div>
 
@@ -234,15 +343,19 @@ export default function SubscriptionPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b-2 border-slate-200">
-                <th className="py-4 px-4 text-base font-extrabold text-slate-900">Tính năng</th>
-                <th className="py-4 px-4 text-base font-bold text-slate-500 w-1/4">Tài khoản Miễn phí</th>
+                <th className="py-4 px-4 text-base font-extrabold text-slate-900">
+                  {lang === 'en' ? 'Feature' : 'Tính năng'}
+                </th>
+                <th className="py-4 px-4 text-base font-bold text-slate-500 w-1/4">
+                  {lang === 'en' ? 'Free Account' : 'Tài khoản Miễn phí'}
+                </th>
                 <th className="py-4 px-4 text-base font-black text-blue-700 w-1/3 bg-blue-50/70 rounded-t-2xl">
-                  Gói học Premium ⭐
+                  {lang === 'en' ? 'Premium Plan ⭐' : 'Gói học Premium ⭐'}
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {COMPARISON_ROWS.map((row, idx) => (
+              {comparison.map((row, idx) => (
                 <tr key={idx} className="hover:bg-slate-50/70 transition">
                   <td className="py-4 px-4 text-base font-bold text-slate-800">{row.feature}</td>
                   <td className="py-4 px-4 text-sm font-semibold text-slate-500">{row.free}</td>
@@ -254,20 +367,24 @@ export default function SubscriptionPage() {
         </div>
       </section>
 
-      {/* Các gói lựa chọn giá học */}
+      {/* Pricing Cards */}
       <section className="mb-14">
         <div className="text-center max-w-2xl mx-auto mb-10">
-          <span className="text-sm font-extrabold uppercase tracking-wider text-amber-600">Bảng giá ưu đãi</span>
+          <span className="text-sm font-extrabold uppercase tracking-wider text-amber-600">
+            {lang === 'en' ? 'Special Pricing' : 'Bảng giá ưu đãi'}
+          </span>
           <h2 className="mt-1 text-3xl font-black text-slate-900 tracking-tight">
-            Chọn gói học phù hợp nhất với bạn
+            {lang === 'en' ? 'Choose the plan that works best for you' : 'Chọn gói học phù hợp nhất với bạn'}
           </h2>
           <p className="mt-2 text-base text-slate-600">
-            Đầu tư cho kỹ năng giao tiếp tiếng Anh trọn đời với mức chi phí chỉ từ một ly cà phê mỗi tuần.
+            {lang === 'en'
+              ? 'Invest in lifelong English fluency for less than the cost of a coffee a week.'
+              : 'Đầu tư cho kỹ năng giao tiếp tiếng Anh trọn đời với mức chi phí chỉ từ một ly cà phê mỗi tuần.'}
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Gói 1 Tháng */}
+          {/* 1 Month */}
           <article
             onClick={() => setSelectedPlan('MONTHLY')}
             className={`cursor-pointer rounded-3xl border-2 p-7 transition flex flex-col justify-between ${
@@ -277,12 +394,24 @@ export default function SubscriptionPage() {
             }`}
           >
             <div>
-              <span className="text-sm font-bold uppercase tracking-wider text-slate-500">Linh hoạt</span>
-              <h3 className="mt-1 text-2xl font-black text-slate-900">Gói 1 Tháng</h3>
-              <p className="mt-2 text-sm text-slate-600">Phù hợp để trải nghiệm toàn bộ tính năng cao cấp ngắn hạn.</p>
+              <span className="text-sm font-bold uppercase tracking-wider text-slate-500">
+                {lang === 'en' ? 'Flexible' : 'Linh hoạt'}
+              </span>
+              <h3 className="mt-1 text-2xl font-black text-slate-900">
+                {lang === 'en' ? '1 Month Plan' : 'Gói 1 Tháng'}
+              </h3>
+              <p className="mt-2 text-sm text-slate-600">
+                {lang === 'en'
+                  ? 'Perfect to experience all premium features short term.'
+                  : 'Phù hợp để trải nghiệm toàn bộ tính năng cao cấp ngắn hạn.'}
+              </p>
               <div className="my-6">
-                <span className="text-4xl font-black text-slate-900">149.000đ</span>
-                <span className="text-sm font-bold text-slate-500"> / tháng</span>
+                <span className="text-4xl font-black text-slate-900">
+                  {lang === 'en' ? '149,000₫' : '149.000đ'}
+                </span>
+                <span className="text-sm font-bold text-slate-500">
+                  {lang === 'en' ? ' / month' : ' / tháng'}
+                </span>
               </div>
             </div>
             <button
@@ -290,11 +419,11 @@ export default function SubscriptionPage() {
               onClick={() => handleToggleTier(true)}
               className="w-full rounded-2xl border-2 border-slate-300 bg-white py-3.5 text-base font-bold text-slate-800 hover:bg-slate-50 transition"
             >
-              Chọn gói 1 tháng
+              {lang === 'en' ? 'Select 1 Month' : 'Chọn gói 1 tháng'}
             </button>
           </article>
 
-          {/* Gói 1 Năm - Nổi bật nhất */}
+          {/* 1 Year */}
           <article
             onClick={() => setSelectedPlan('YEARLY')}
             className={`cursor-pointer rounded-3xl border-2 p-7 transition flex flex-col justify-between relative overflow-hidden ${
@@ -304,16 +433,30 @@ export default function SubscriptionPage() {
             }`}
           >
             <div className="absolute top-0 right-0 rounded-bl-2xl bg-amber-500 px-4 py-1 text-xs font-black uppercase text-white shadow-sm">
-              TIẾT KIỆM 55% · KHUYÊN DÙNG
+              {lang === 'en' ? 'SAVE 55% · RECOMMENDED' : 'TIẾT KIỆM 55% · KHUYÊN DÙNG'}
             </div>
             <div>
-              <span className="text-sm font-extrabold uppercase tracking-wider text-amber-600">Được yêu thích nhất</span>
-              <h3 className="mt-1 text-2xl font-black text-slate-900">Gói 1 Năm + 3 Tháng</h3>
-              <p className="mt-2 text-sm text-slate-600">Tặng thêm 3 tháng miễn phí. Đầu tư bài bản để nói tiếng Anh lưu loát.</p>
+              <span className="text-sm font-extrabold uppercase tracking-wider text-amber-600">
+                {lang === 'en' ? 'Most Popular' : 'Được yêu thích nhất'}
+              </span>
+              <h3 className="mt-1 text-2xl font-black text-slate-900">
+                {lang === 'en' ? '1 Year + 3 Months Free' : 'Gói 1 Năm + 3 Tháng'}
+              </h3>
+              <p className="mt-2 text-sm text-slate-600">
+                {lang === 'en'
+                  ? '3 bonus months free. Structured investment for fluent English speaking.'
+                  : 'Tặng thêm 3 tháng miễn phí. Đầu tư bài bản để nói tiếng Anh lưu loát.'}
+              </p>
               <div className="my-6">
-                <span className="text-4xl font-black text-amber-600">799.000đ</span>
-                <span className="text-sm font-bold text-slate-500"> / 15 tháng</span>
-                <p className="text-xs font-bold text-emerald-700 mt-1">Chỉ ~53.000đ/tháng</p>
+                <span className="text-4xl font-black text-amber-600">
+                  {lang === 'en' ? '799,000₫' : '799.000đ'}
+                </span>
+                <span className="text-sm font-bold text-slate-500">
+                  {lang === 'en' ? ' / 15 months' : ' / 15 tháng'}
+                </span>
+                <p className="text-xs font-bold text-emerald-700 mt-1">
+                  {lang === 'en' ? 'Only ~53,000₫/month' : 'Chỉ ~53.000đ/tháng'}
+                </p>
               </div>
             </div>
             <button
@@ -321,11 +464,11 @@ export default function SubscriptionPage() {
               onClick={() => handleToggleTier(true)}
               className="w-full rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 py-4 text-base font-black text-white shadow-lg shadow-amber-500/30 hover:from-amber-600 hover:to-amber-700 transition"
             >
-              ⭐ Nhận ưu đãi gói 1 năm
+              ⭐ {lang === 'en' ? 'Claim 1 Year Offer' : 'Nhận ưu đãi gói 1 năm'}
             </button>
           </article>
 
-          {/* Gói Trọn đời */}
+          {/* Lifetime */}
           <article
             onClick={() => setSelectedPlan('LIFETIME')}
             className={`cursor-pointer rounded-3xl border-2 p-7 transition flex flex-col justify-between ${
@@ -335,12 +478,24 @@ export default function SubscriptionPage() {
             }`}
           >
             <div>
-              <span className="text-sm font-bold uppercase tracking-wider text-indigo-600">Đầu tư 1 lần</span>
-              <h3 className="mt-1 text-2xl font-black text-slate-900">Gói Trọn Đời (Lifetime)</h3>
-              <p className="mt-2 text-sm text-slate-600">Sở hữu vĩnh viễn mọi bản cập nhật và bài học mới trong tương lai.</p>
+              <span className="text-sm font-bold uppercase tracking-wider text-indigo-600">
+                {lang === 'en' ? 'One-time Investment' : 'Đầu tư 1 lần'}
+              </span>
+              <h3 className="mt-1 text-2xl font-black text-slate-900">
+                {lang === 'en' ? 'Lifetime Access' : 'Gói Trọn Đời (Lifetime)'}
+              </h3>
+              <p className="mt-2 text-sm text-slate-600">
+                {lang === 'en'
+                  ? 'Permanent ownership of all updates and future lessons.'
+                  : 'Sở hữu vĩnh viễn mọi bản cập nhật và bài học mới trong tương lai.'}
+              </p>
               <div className="my-6">
-                <span className="text-4xl font-black text-slate-900">1.490.000đ</span>
-                <span className="text-sm font-bold text-slate-500"> / thanh toán 1 lần</span>
+                <span className="text-4xl font-black text-slate-900">
+                  {lang === 'en' ? '1,490,000₫' : '1.490.000đ'}
+                </span>
+                <span className="text-sm font-bold text-slate-500">
+                  {lang === 'en' ? ' / one-time payment' : ' / thanh toán 1 lần'}
+                </span>
               </div>
             </div>
             <button
@@ -348,34 +503,24 @@ export default function SubscriptionPage() {
               onClick={() => handleToggleTier(true)}
               className="w-full rounded-2xl border-2 border-indigo-300 bg-indigo-50 py-3.5 text-base font-bold text-indigo-800 hover:bg-indigo-100 transition"
             >
-              Sở hữu trọn đời
+              {lang === 'en' ? 'Get Lifetime Access' : 'Sở hữu trọn đời'}
             </button>
           </article>
         </div>
       </section>
 
-      {/* Cam kết & Hỏi đáp nhanh */}
+      {/* FAQs */}
       <section className="rounded-3xl border-2 border-slate-200 bg-slate-50 p-8 sm:p-10 mb-10">
         <h3 className="text-2xl font-black text-slate-900 text-center mb-6">
-          Câu hỏi thường gặp về gói Premium
+          {lang === 'en' ? 'Frequently Asked Questions' : 'Câu hỏi thường gặp về gói Premium'}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-slate-700 text-base">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200">
-            <h4 className="font-extrabold text-slate-900 mb-1">Tôi có thể tự dán video YouTube bất kỳ không?</h4>
-            <p className="text-sm text-slate-600">Có, bạn có thể dán bất kỳ link video nào có phụ đề tiếng Anh (kể cả phụ đề tự động của YouTube). AI sẽ đồng bộ từng câu để bạn luyện tập.</p>
-          </div>
-          <div className="bg-white p-5 rounded-2xl border border-slate-200">
-            <h4 className="font-extrabold text-slate-900 mb-1">AI chấm phát âm hoạt động chính xác thế nào?</h4>
-            <p className="text-sm text-slate-600">Hệ thống phân tích giọng nói sử dụng mô hình học sâu đối chiếu phát âm của bạn với dữ liệu người bản ngữ chuẩn, phát hiện từng nguyên âm và phụ âm lệch chuẩn.</p>
-          </div>
-          <div className="bg-white p-5 rounded-2xl border border-slate-200">
-            <h4 className="font-extrabold text-slate-900 mb-1">Tôi có được hoàn tiền nếu không phù hợp không?</h4>
-            <p className="text-sm text-slate-600">Chúng tôi hỗ trợ chính sách hoàn tiền 100% trong 7 ngày đầu nếu bạn cảm thấy chương trình không giúp ích cho tiến bộ tiếng Anh của mình.</p>
-          </div>
-          <div className="bg-white p-5 rounded-2xl border border-slate-200">
-            <h4 className="font-extrabold text-slate-900 mb-1">Tôi có thể hủy gia hạn gói cước bất cứ lúc nào không?</h4>
-            <p className="text-sm text-slate-600">Hoàn toàn có thể. Bạn có thể tự quản lý hoặc hủy gói trong trang Quản lý tài khoản với 1 cú click chuột mà không có bất kỳ khoản phí ẩn nào.</p>
-          </div>
+          {faqs.map((faq, idx) => (
+            <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-200">
+              <h4 className="font-extrabold text-slate-900 mb-1">{faq.q}</h4>
+              <p className="text-sm text-slate-600">{faq.a}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -389,14 +534,16 @@ export default function SubscriptionPage() {
             ✓
           </div>
           <div>
-            <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-600">Tài khoản Premium</p>
+            <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-600">
+              {lang === 'en' ? 'Premium Status' : 'Tài khoản Premium'}
+            </p>
             <p className="text-base font-bold text-slate-800">{toastMessage}</p>
           </div>
           <button
             type="button"
             onClick={() => setToastMessage(null)}
             className="ml-2 text-slate-400 hover:text-slate-600 font-bold p-1"
-            aria-label="Đóng"
+            aria-label={lang === 'en' ? 'Close' : 'Đóng'}
           >
             ✕
           </button>
