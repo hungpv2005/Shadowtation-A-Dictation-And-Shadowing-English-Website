@@ -12,40 +12,93 @@ export interface DictationScore {
   tokens: DiffToken[];
 }
 
+// Bộ nhớ đệm phân tích từ (Tokenization Cache)
+const tokenCache = new Map<string, string[]>();
+const MAX_TOKEN_CACHE = 200;
+
 export function tokenize(value: string): string[] {
-  return value
+  if (!value) return [];
+  const cached = tokenCache.get(value);
+  if (cached) return cached;
+
+  const clean = value
     .normalize('NFC')
     .toLocaleLowerCase('en-US')
     .replace(/[.,!?;:()[\]{}“”"'‘’…—–\-\/]/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+    .trim();
+
+  const tokens = clean ? clean.split(/\s+/) : [];
+
+  if (tokenCache.size >= MAX_TOKEN_CACHE) {
+    const firstKey = tokenCache.keys().next().value;
+    if (firstKey) tokenCache.delete(firstKey);
+  }
+  tokenCache.set(value, tokens);
+  return tokens;
 }
 
+const OP_MATCH = 0;
+const OP_SUB = 1;
+const OP_OMI = 2;
+const OP_INS = 3;
+
+// Bộ nhớ đệm kết quả so khớp Levenshtein (Memoization Cache)
+const diffCache = new Map<string, DictationScore>();
+const MAX_DIFF_CACHE = 150;
+
+/**
+ * Thuật toán so khớp chuỗi WER / Levenshtein hiệu năng cao:
+ * - Sử dụng TypedArray (Int32Array & Uint8Array) loại bỏ hoàn toàn cấp phát mảng 2D (Zero-GC pressure).
+ * - Tích hợp Memoization cache giúp trả kết quả tức thì trong < 1ms khi người dùng gõ phím.
+ */
 export function compareDictation(referenceText: string, submittedText: string): DictationScore {
+  const cacheKey = `${referenceText}::${submittedText}`;
+  const cached = diffCache.get(cacheKey);
+  if (cached) return cached;
+
   const reference = tokenize(referenceText);
   const submitted = tokenize(submittedText);
   const rows = reference.length + 1;
   const cols = submitted.length + 1;
-  const cost = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
-  const back = Array.from({ length: rows }, () => Array<'match' | 'substitution' | 'omission' | 'insertion'>(cols).fill('match'));
+  const totalCells = rows * cols;
 
-  for (let i = 1; i < rows; i++) { cost[i][0] = i; back[i][0] = 'omission'; }
-  for (let j = 1; j < cols; j++) { cost[0][j] = j; back[0][j] = 'insertion'; }
+  // Sử dụng TypedArray liền kề trong bộ nhớ thay vì Array.from 2D
+  const cost = new Int32Array(totalCells);
+  const back = new Uint8Array(totalCells);
+
   for (let i = 1; i < rows; i++) {
+    cost[i * cols] = i;
+    back[i * cols] = OP_OMI;
+  }
+  for (let j = 1; j < cols; j++) {
+    cost[j] = j;
+    back[j] = OP_INS;
+  }
+
+  for (let i = 1; i < rows; i++) {
+    const rowOffset = i * cols;
+    const prevRowOffset = (i - 1) * cols;
+    const refWord = reference[i - 1];
+
     for (let j = 1; j < cols; j++) {
-      if (reference[i - 1] === submitted[j - 1]) {
-        cost[i][j] = cost[i - 1][j - 1];
-        back[i][j] = 'match';
+      if (refWord === submitted[j - 1]) {
+        cost[rowOffset + j] = cost[prevRowOffset + j - 1];
+        back[rowOffset + j] = OP_MATCH;
       } else {
-        const choices = [
-          { value: cost[i - 1][j - 1] + 1, op: 'substitution' as const },
-          { value: cost[i - 1][j] + 1, op: 'omission' as const },
-          { value: cost[i][j - 1] + 1, op: 'insertion' as const },
-        ];
-        const best = choices.reduce((a, b) => b.value < a.value ? b : a);
-        cost[i][j] = best.value;
-        back[i][j] = best.op;
+        const subCost = cost[prevRowOffset + j - 1] + 1;
+        const omiCost = cost[prevRowOffset + j] + 1;
+        const insCost = cost[rowOffset + j - 1] + 1;
+
+        if (subCost <= omiCost && subCost <= insCost) {
+          cost[rowOffset + j] = subCost;
+          back[rowOffset + j] = OP_SUB;
+        } else if (omiCost <= insCost) {
+          cost[rowOffset + j] = omiCost;
+          back[rowOffset + j] = OP_OMI;
+        } else {
+          cost[rowOffset + j] = insCost;
+          back[rowOffset + j] = OP_INS;
+        }
       }
     }
   }
@@ -54,11 +107,16 @@ export function compareDictation(referenceText: string, submittedText: string): 
   let i = reference.length;
   let j = submitted.length;
   while (i || j) {
-    const op = back[i][j];
-    if (i && j && (op === 'match' || op === 'substitution')) {
-      aligned.push({ reference: reference[i - 1], submitted: submitted[j - 1], kind: op === 'match' ? 'correct' : 'substitution' });
-      i--; j--;
-    } else if (i && (!j || op === 'omission')) {
+    const op = back[i * cols + j];
+    if (i && j && (op === OP_MATCH || op === OP_SUB)) {
+      aligned.push({
+        reference: reference[i - 1],
+        submitted: submitted[j - 1],
+        kind: op === OP_MATCH ? 'correct' : 'substitution',
+      });
+      i--;
+      j--;
+    } else if (i && (!j || op === OP_OMI)) {
       aligned.push({ reference: reference[i - 1], submitted: '', kind: 'omission' });
       i--;
     } else {
@@ -68,9 +126,21 @@ export function compareDictation(referenceText: string, submittedText: string): 
   }
   aligned.reverse();
 
-  const errors = cost[reference.length][submitted.length];
+  const errors = cost[reference.length * cols + submitted.length];
   const wer = reference.length ? errors / reference.length : (submitted.length ? 1 : 0);
-  return { wer, accuracy: Math.max(0, Math.round((1 - wer) * 100)), tokens: aligned };
+  const result: DictationScore = {
+    wer,
+    accuracy: Math.max(0, Math.round((1 - wer) * 100)),
+    tokens: aligned,
+  };
+
+  if (diffCache.size >= MAX_DIFF_CACHE) {
+    const firstKey = diffCache.keys().next().value;
+    if (firstKey) diffCache.delete(firstKey);
+  }
+  diffCache.set(cacheKey, result);
+
+  return result;
 }
 
 export function hintPenalty(level: number, penalties: number[] = [0, 5, 10, 20]): number {

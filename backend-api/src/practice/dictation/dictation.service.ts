@@ -34,7 +34,7 @@ export class DictationService {
     const user = candidate?.isActive ? candidate : null;
     const query = this.dataSource.getRepository(Lesson).createQueryBuilder('lesson')
       .leftJoin('lesson.sentences', 'sentence')
-      .select(['lesson.id', 'lesson.title', 'lesson.level', 'lesson.audioUrl', 'lesson.mediaType', 'lesson.sourceName', 'lesson.sourceUrl', 'lesson.durationSeconds', 'lesson.isPremiumOnly'])
+      .select(['lesson.id', 'lesson.title', 'lesson.level', 'lesson.audioUrl', 'lesson.mediaType', 'lesson.sourceName', 'lesson.sourceUrl', 'lesson.durationSeconds', 'lesson.isPremiumOnly', 'lesson.createdByUserId'])
       .addSelect('COUNT(sentence.id)', 'sentenceCount')
       .where('lesson.status = :status', { status: 'PUBLISHED' })
       .andWhere(filters.level ? 'lesson.level = :level' : '1 = 1', filters.level ? { level: filters.level } : {})
@@ -50,6 +50,7 @@ export class DictationService {
       mediaType: lesson.mediaType, sourceName: lesson.sourceName, sourceUrl: lesson.sourceUrl,
       isPremiumOnly: lesson.isPremiumOnly, sentenceCount: Number(rows.raw[index]?.sentenceCount ?? 0),
       access: (user && this.hasPremium(user)) || !lesson.isPremiumOnly ? 'AVAILABLE' : 'LOCKED',
+      isCustom: Boolean(lesson.createdByUserId),
     })) };
   }
 
@@ -141,6 +142,7 @@ export class DictationService {
       sourceName: saved.lesson.sourceName, sourceUrl: saved.lesson.sourceUrl,
       durationSeconds: saved.lesson.durationSeconds, isPremiumOnly: false,
       access: 'AVAILABLE', sentenceCount: saved.sentenceCount,
+      isCustom: true,
     } };
   }
 

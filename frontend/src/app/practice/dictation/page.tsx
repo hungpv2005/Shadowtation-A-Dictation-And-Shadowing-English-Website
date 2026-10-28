@@ -12,7 +12,7 @@ import { clearShadowingRecordings } from './shadowing-recordings';
 import { VocabularyReviewSection } from './vocabulary-review-section';
 import { useLanguage } from '@/lib/i18n';
 
-type Lesson = { id: string; title: string; level: string; audioUrl?: string | null; mediaType?: 'AUDIO' | 'VIDEO' | 'PODCAST'; sourceName?: string | null; sourceUrl?: string | null; durationSeconds?: number | null; isPremiumOnly: boolean; access: 'AVAILABLE' | 'LOCKED'; sentenceCount: number };
+type Lesson = { id: string; title: string; level: string; audioUrl?: string | null; mediaType?: 'AUDIO' | 'VIDEO' | 'PODCAST'; sourceName?: string | null; sourceUrl?: string | null; durationSeconds?: number | null; isPremiumOnly: boolean; access: 'AVAILABLE' | 'LOCKED'; sentenceCount: number; isCustom?: boolean };
 type Sentence = { id: string; startTime: number; endTime: number; textContent: string; wordsJson: { word: string; start: number; end: number }[] };
 type Submission = { sentenceId: string; textInput: string; hintCount: number; usedTranscriptHint: boolean };
 type LessonDraft = {
@@ -507,7 +507,7 @@ function DictationPracticeInner() {
     } catch {}
     if (!isPremium) isPremium = localStorage.getItem('shadowtation_tier') === 'PREMIUM';
 
-    const customCount = lessons.filter((item) => Boolean(item.sourceUrl)).length;
+    const customCount = lessons.filter((item) => Boolean(item.isCustom)).length;
     if (!isPremium && customCount >= 2) {
       setLockedLesson({
         id: 'premium-custom-limit',
@@ -1073,9 +1073,7 @@ function DictationPracticeInner() {
           </div>
         </div>
         <header className="mb-10">
-          <button type="button" onClick={goBackFromLibrary} className="dictation-back-link mb-3">
-            ← {lang === 'en' ? 'Back to home' : 'Quay lại trang chủ'}
-          </button>
+          
           <p className="text-sm font-bold uppercase tracking-[.2em] text-blue-600 dark:text-blue-400">
             Shadowtation · {practiceMode === 'SHADOWING' ? t('dictation.tab_shadowing') : t('dictation.tab_dictation')}
           </p>

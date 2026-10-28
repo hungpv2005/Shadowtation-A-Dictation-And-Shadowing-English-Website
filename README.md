@@ -1,8 +1,7 @@
 # Shadowtation — Website học tiếng Anh bằng Dictation & Shadowing
 
-> 🌟 **Nhánh:** `demo-website-ban-co-day-du-cac-uc` — **Demo Website (Bản có đầy đủ các UC)**  
-> Bản phát hành tích hợp trọn vẹn 10 Use Cases (UC-01 đến UC-10), AI Tutor Chatbot 24/7, Đa ngôn ngữ (i18n), Dark/Light Mode, AI Auto-Transcription và Admin Portal độc lập.  
-> Chi tiết tài liệu mô tả nhánh xem tại: [`BRANCH_DESCRIPTION.md`](BRANCH_DESCRIPTION.md).
+
+
 
 Đồ án chuyên ngành — Trường Công nghệ thông tin, Đại học Phenikaa.
 Học phần: Đồ án chuyên ngành-1-1-26 (N03). Giảng viên hướng dẫn: ThS. Nguyễn Thị Dinh.

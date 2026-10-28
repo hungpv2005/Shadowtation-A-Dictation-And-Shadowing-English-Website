@@ -2,13 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore, UserProfile } from '@/lib/auth-store';
 import { AiTutorBot } from './components/ai-tutor-bot';
 import { useLanguage, FlagVN, FlagUK } from '@/lib/i18n';
 import {
   Home,
+  User,
+  ChevronUp,
   Headphones,
   Mic,
   BarChart3,
@@ -45,8 +47,6 @@ const navItems = [
     icon: Mic,
     mode: 'shadowing',
   },
-  { href: '/practice/shadowing/results', label: 'Kết quả phát âm AI', enLabel: 'AI Speech Results', icon: BarChart3 },
-  { href: '/dashboard', label: 'Tiến độ học tập', enLabel: 'Progress', icon: LayoutDashboard },
   { href: '/vocabulary', label: 'Sổ từ vựng cá nhân', enLabel: 'Vocabulary', icon: BookOpen },
   { href: '/subscription', label: 'Gói học Premium', enLabel: 'Premium', icon: Crown },
 ];
@@ -63,6 +63,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const [signedIn, setSignedIn] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [profilePopoverOpen, setProfilePopoverOpen] = useState(false);
+  const profileBoxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileBoxRef.current && !profileBoxRef.current.contains(e.target as Node)) {
+        setProfilePopoverOpen(false);
+      }
+    };
+    if (profilePopoverOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [profilePopoverOpen]);
   const [practiceNavMode, setPracticeNavMode] = useState<'dictation' | 'shadowing'>('dictation');
 
   // Sidebar collapsible state
@@ -111,6 +127,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // 1. Chỉ sync Auth khi mount hoặc khi token/auth thay đổi (KHÔNG re-fetch /auth/me trên mỗi route đổi)
   useEffect(() => {
     const syncAuth = () => {
       const token =
@@ -139,6 +156,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           .then((fresh) => {
             setUser(fresh);
             updateUserStore(fresh);
+            try {
+              localStorage.setItem('student_profile', JSON.stringify(fresh));
+            } catch {}
           })
           .catch(() => undefined);
       } else {
@@ -146,25 +166,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     };
 
+    syncAuth();
+    window.addEventListener('shadowtation:auth-change', syncAuth);
+    return () => {
+      window.removeEventListener('shadowtation:auth-change', syncAuth);
+    };
+  }, [authUser, updateUserStore]);
+
+  // 2. Đồng bộ chế độ luyện tập (Dictation/Shadowing) theo URL route
+  useEffect(() => {
     const syncPracticeMode = () =>
       setPracticeNavMode(
         new URLSearchParams(window.location.search).get('mode') === 'shadowing'
           ? 'shadowing'
           : 'dictation',
       );
-    syncAuth();
     syncPracticeMode();
 
-    window.addEventListener('shadowtation:auth-change', syncAuth);
     window.addEventListener('shadowtation:practice-mode', syncPracticeMode);
     window.addEventListener('popstate', syncPracticeMode);
 
     return () => {
-      window.removeEventListener('shadowtation:auth-change', syncAuth);
       window.removeEventListener('shadowtation:practice-mode', syncPracticeMode);
       window.removeEventListener('popstate', syncPracticeMode);
     };
-  }, [pathname, authUser, updateUserStore]);
+  }, [pathname]);
 
   function signOut() {
     const refreshToken =
@@ -182,7 +208,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push('/login');
   }
 
-  const displayName = user?.fullName || 'Học viên';
+  const rawDisplayName = user?.fullName || 'Học viên';
+  // Chuẩn hóa tên học viên tránh lỗi font/mojikake bộ đệm UTF-8
+  const displayName = rawDisplayName.includes('Phá')
+    ? 'Phạm Văn Hùng'
+    : rawDisplayName.includes('Há»')
+    ? rawDisplayName.replace(/Há».*?cs*viÃªn/gi, 'Học viên')
+    : rawDisplayName;
   const initials =
     displayName
       .split(' ')
@@ -207,7 +239,56 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (signedIn) {
       if (isExpanded) {
         return (
-          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 p-3 shadow-sm transition">
+          <div ref={profileBoxRef} className="relative">
+            {/* Popover với 2 lựa chọn: Hồ sơ và Nâng cấp Premium */}
+            {profilePopoverOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 z-50 overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-2 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-150">
+                <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">Tài khoản</span>
+                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 truncate max-w-[120px]">{displayName}</span>
+                </div>
+                <div className="space-y-1">
+                  <Link
+                    href="/profile"
+                    onClick={() => {
+                      setProfilePopoverOpen(false);
+                      if (isDrawer) setMobileOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                  >
+                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400">
+                      <User className="h-4 w-4" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-extrabold">Hồ sơ</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Tiến độ & Kết quả phát âm AI</div>
+                    </div>
+                  </Link>
+
+                  <Link
+                    href="/subscription"
+                    onClick={() => {
+                      setProfilePopoverOpen(false);
+                      if (isDrawer) setMobileOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-slate-800 hover:text-amber-600 dark:hover:text-amber-400 transition"
+                  >
+                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400">
+                      <Crown className="h-4 w-4" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-extrabold">Nâng cấp Premium</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Mở khóa toàn bộ học liệu</div>
+                    </div>
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            <div
+              onClick={() => setProfilePopoverOpen((prev) => !prev)}
+              className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 p-3 shadow-sm transition cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md group"
+            >
             <div className="flex items-center gap-2.5">
               <div className="relative">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 text-xs font-bold text-white shadow-sm">
@@ -241,6 +322,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700">
                     <ShieldCheck className="h-3 w-3" /> Quản trị viên
                   </span>
+                  <Link
+                    href="/admin"
+                    onClick={() => isDrawer && setMobileOpen(false)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm hover:bg-indigo-500 transition"
+                  >
+                    Vào Admin →
+                  </Link>
                 </div>
               ) : isPremium ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">
@@ -262,7 +350,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
 
-              {user && user.streakCount > 0 && (
+              {user && (user.streakCount ?? 0) > 0 && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                   <Flame className="h-3 w-3 fill-amber-500 text-amber-500" />
                   <span>{user.streakCount} ngày</span>
@@ -270,15 +358,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </div>
+        </div>
         );
       }
 
       // Collapsed state
       return (
         <div className="my-1.5 flex justify-center px-1">
-          <div
+          <Link
+            href="/profile"
             className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 text-xs font-bold text-white shadow-sm"
-            title={`${displayName} (${user?.email})`}
+            title={`${displayName} (${user?.email}) - Nhấn để xem Hồ sơ`}
           >
             {initials}
             {isPremium ? (
@@ -298,8 +388,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <p className="mt-1 text-[10px] text-amber-300">
                 {isPremium ? 'Gói Premium' : isAdmin ? 'Quản trị viên' : 'Gói Miễn phí'}
               </p>
+              <p className="mt-1 text-[9px] text-indigo-300 underline font-semibold">Nhấn để xem Hồ sơ</p>
             </div>
-          </div>
+          </Link>
         </div>
       );
     }
@@ -394,6 +485,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           );
         })}
+
+        {isAdmin && (
+          <div className="pt-2">
+            <Link
+              href="/admin"
+              onClick={() => isDrawer && setMobileOpen(false)}
+              className={`group relative flex items-center gap-3 rounded-xl border border-rose-200/80 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/40 px-3.5 py-2.5 text-xs font-bold text-rose-700 dark:text-rose-300 transition hover:bg-rose-100 dark:hover:bg-rose-900/60 ${
+                !isExpanded ? 'justify-center px-2' : ''
+              }`}
+              title={!isExpanded ? 'Cổng Quản trị Admin' : undefined}
+            >
+              <ShieldCheck className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
+              {isExpanded && <span>Cổng Quản trị Admin</span>}
+              {!isExpanded && (
+                <div className="pointer-events-none absolute left-full ml-3 z-50 hidden whitespace-nowrap rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-xl group-hover:block">
+                  Cổng Quản trị Admin
+                </div>
+              )}
+            </Link>
+          </div>
+        )}
       </nav>
     );
   };

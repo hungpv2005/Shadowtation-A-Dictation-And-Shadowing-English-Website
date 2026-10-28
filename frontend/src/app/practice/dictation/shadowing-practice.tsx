@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
 import { readShadowingRecording, saveShadowingRecording, type SavedShadowingRecording } from './shadowing-recordings';
@@ -49,6 +49,38 @@ function scoreMessage(errorCode?: string | null) {
   if (errorCode === 'AI_CONFIGURATION_ERROR') return 'Dịch vụ chấm AI chưa được cấu hình. Vui lòng báo quản trị viên kiểm tra OPENAI_API_KEY.';
   return 'Chưa chấm được bản ghi này. Hãy thử ghi âm và gửi lại.';
 }
+
+
+const WaveformVisualizer = memo(function WaveformVisualizer({
+  recording,
+  meter,
+}: {
+  recording: boolean;
+  meter: number;
+}) {
+  const bars = useMemo(
+    () =>
+      Array.from({ length: 36 }, (_, index) => {
+        const natural = 14 + Math.abs(Math.sin(index * 1.7)) * 24;
+        return recording
+          ? Math.max(10, Math.min(100, natural + meter * (0.2 + (index % 5) * 0.13)))
+          : natural;
+      }),
+    [recording, meter],
+  );
+
+  return (
+    <div
+      className="shadowing-waveform"
+      aria-label={recording ? 'Microphone waveform' : 'Audio waveform'}
+      role="img"
+    >
+      {bars.map((height, index) => (
+        <i key={index} style={{ height: `${height}%` }} />
+      ))}
+    </div>
+  );
+});
 
 export function ShadowingPractice({
   lessonId,
@@ -99,15 +131,18 @@ export function ShadowingPractice({
   const attemptIsProcessing = activeAttempt?.status === 'PENDING' || activeAttempt?.status === 'PROCESSING';
   const needsAssessment = Boolean(previewBlob && !recording && !sending && !attemptIsProcessing
     && (activeAttempt?.status === 'FAILED' || !activeAttempt || previewAttemptId !== activeAttempt.attemptId));
-  const waveform = useMemo(() => Array.from({ length: 36 }, (_, index) => {
-    const natural = 14 + Math.abs(Math.sin(index * 1.7)) * 24;
-    return recording ? Math.max(10, Math.min(100, natural + meter * (0.2 + (index % 5) * 0.13))) : natural;
-  }), [recording, meter]);
+// waveform is managed by memoized WaveformVisualizer
 
   useEffect(() => {
     setAttempts(readStoredAttempts(lessonId));
     setAttemptsHydrated(true);
   }, [lessonId]);
+
+  useEffect(() => {
+    if (previewUrl && previewAudioRef.current) {
+      try { previewAudioRef.current.load(); } catch {}
+    }
+  }, [previewUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -230,16 +265,23 @@ export function ShadowingPractice({
       };
       const context = new AudioContext();
       audioContextRef.current = context;
+      if (context.state === 'suspended') {
+        void context.resume();
+      }
       const source = context.createMediaStreamSource(stream);
       const analyser = context.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
       const samples = new Uint8Array(analyser.frequencyBinCount);
-      const updateMeter = () => {
-        analyser.getByteTimeDomainData(samples);
-        let energy = 0;
-        for (let index = 0; index < samples.length; index += 1) energy += Math.abs(samples[index] - 128);
-        setMeter(Math.min(100, (energy / samples.length) * 2.7));
+      let lastFrameTime = 0;
+      const updateMeter = (timestamp: number) => {
+        if (timestamp - lastFrameTime >= 33) {
+          analyser.getByteTimeDomainData(samples);
+          let energy = 0;
+          for (let index = 0; index < samples.length; index += 1) energy += Math.abs(samples[index] - 128);
+          setMeter(Math.min(100, (energy / samples.length) * 2.7));
+          lastFrameTime = timestamp;
+        }
         animationRef.current = requestAnimationFrame(updateMeter);
       };
       setElapsed(0);
@@ -315,9 +357,24 @@ export function ShadowingPractice({
   }
 
   function playRecording() {
-    if (!previewAudioRef.current || !previewUrl) return;
-    previewAudioRef.current.currentTime = 0;
-    void previewAudioRef.current.play().catch(() => setError('Không phát được bản ghi. Hãy bấm phát trên thanh nghe hoặc ghi âm lại.'));
+    const audio = previewAudioRef.current;
+    if (!audio || !previewUrl) return;
+    try {
+      audio.currentTime = 0;
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          try {
+            audio.load();
+            audio.play().catch(() => setError('Không phát được bản ghi. Hãy bấm nút Play trên thanh nghe hoặc ghi âm lại.'));
+          } catch {
+            setError('Không phát được bản ghi. Hãy bấm nút Play trên thanh nghe hoặc ghi âm lại.');
+          }
+        });
+      }
+    } catch {
+      setError('Không phát được bản ghi. Hãy bấm phát trên thanh nghe hoặc ghi âm lại.');
+    }
   }
 
   const shortcutActionsRef = useRef({ startRecording, stopRecording, submitRecording, playRecording });
@@ -366,7 +423,7 @@ export function ShadowingPractice({
         <div><strong>{recording ? t('shadowing.recording_live') : previewUrl ? t('shadowing.recording_saved') : t('shadowing.recording_turn')}</strong><span>{recording ? t('shadowing.recording_live_desc') : previewUrl ? t('shadowing.recording_saved_desc') : t('shadowing.recording_turn_desc')}</span></div>
         <time>{formatDuration(elapsed)}</time>
       </div>
-      <div className="shadowing-waveform" aria-label={recording ? 'Microphone waveform' : 'Audio waveform'} role="img">{waveform.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div>
+      <WaveformVisualizer recording={recording} meter={meter} />
       {recording && <p className="shadowing-mic-hint">{t('shadowing.mic_hint')}</p>}
       {previewUrl && !recording && <audio ref={previewAudioRef} className="shadowing-preview-audio" controls preload="metadata" src={previewUrl} aria-label="Playback" />}
       <div className="shadowing-recorder-actions">

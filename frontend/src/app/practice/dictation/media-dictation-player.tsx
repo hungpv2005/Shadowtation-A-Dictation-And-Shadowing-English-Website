@@ -28,38 +28,90 @@ declare global {
   }
 }
 
+
+function initYouTubePreconnect() {
+  if (typeof document === 'undefined') return;
+  if (!document.querySelector('link[rel="dns-prefetch"][href="//www.youtube.com"]')) {
+    const dns1 = document.createElement('link');
+    dns1.rel = 'dns-prefetch';
+    dns1.href = '//www.youtube.com';
+    document.head.appendChild(dns1);
+
+    const dns2 = document.createElement('link');
+    dns2.rel = 'dns-prefetch';
+    dns2.href = '//s.ytimg.com';
+    document.head.appendChild(dns2);
+
+    const pre1 = document.createElement('link');
+    pre1.rel = 'preconnect';
+    pre1.href = 'https://www.youtube.com';
+    document.head.appendChild(pre1);
+  }
+}
+
 let youTubeApiPromise: Promise<void> | null = null;
 
-function loadYouTubeApi() {
+function loadYouTubeApi(): Promise<void> {
+  initYouTubePreconnect();
+  if (typeof window === 'undefined') return Promise.resolve();
   if (window.YT?.Player) return Promise.resolve();
   if (youTubeApiPromise) return youTubeApiPromise;
 
   youTubeApiPromise = new Promise<void>((resolve, reject) => {
-    const previousReady = window.onYouTubeIframeAPIReady;
-    const scriptUrl = 'https://www.youtube.com/iframe_api';
-    const existingScript = document.querySelector<HTMLScriptElement>(`script[src="${scriptUrl}"]`);
-    const fail = () => {
-      youTubeApiPromise = null;
-      reject(new Error('Không tải được trình phát YouTube. Hãy kiểm tra kết nối rồi thử lại.'));
+    const checkReady = () => {
+      if (window.YT?.Player) {
+        resolve();
+        return true;
+      }
+      return false;
     };
 
+    if (checkReady()) return;
+
+    if ((window as any).YT && typeof (window as any).YT.ready === 'function') {
+      (window as any).YT.ready(() => {
+        if (checkReady()) return;
+      });
+    }
+
+    const scriptUrl = 'https://www.youtube.com/iframe_api';
+    const existingScript = document.querySelector<HTMLScriptElement>(`script[src="${scriptUrl}"]`);
+
+    const previousReady = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
       previousReady?.();
-      if (window.YT?.Player) resolve();
-      else fail();
+      let tries = 0;
+      const interval = setInterval(() => {
+        tries++;
+        if (checkReady() || tries > 20) clearInterval(interval);
+      }, 50);
     };
 
     if (existingScript) {
-      existingScript.addEventListener('error', fail, { once: true });
+      let tries = 0;
+      const pollExisting = setInterval(() => {
+        tries++;
+        if (checkReady() || tries > 40) {
+          clearInterval(pollExisting);
+          if (!window.YT?.Player && tries > 40) {
+            youTubeApiPromise = null;
+            reject(new Error('Không tải được trình phát YouTube.'));
+          }
+        }
+      }, 100);
       return;
     }
 
     const script = document.createElement('script');
     script.src = scriptUrl;
     script.async = true;
-    script.onerror = fail;
+    script.onerror = () => {
+      youTubeApiPromise = null;
+      reject(new Error('Không tải được trình phát YouTube. Hãy kiểm tra kết nối rồi thử lại.'));
+    };
     document.head.appendChild(script);
   });
+
   return youTubeApiPromise;
 }
 
@@ -154,7 +206,9 @@ export function MediaDictationPlayer({
       try { audio.currentTime = startTime; } catch { /* Metadata may not have loaded yet. */ }
     }
     if (isVideo && playerReady && playerRef.current && videoId) {
-      playerRef.current.cueVideoById({ videoId, startSeconds: startTime, endSeconds: endTime });
+      try {
+        playerRef.current.cueVideoById({ videoId, startSeconds: startTime, endSeconds: endTime });
+      } catch { /* Player may be buffering or re-initializing */ }
     }
   }, [startTime, endTime, isVideo, playerReady, videoId]);
 
@@ -171,7 +225,14 @@ export function MediaDictationPlayer({
         width: '100%',
         height: '100%',
         videoId,
-        playerVars: { controls: 1, playsinline: 1, rel: 0, origin: window.location.origin },
+        playerVars: {
+          enablejsapi: 1,
+          controls: 1,
+          playsinline: 1,
+          rel: 0,
+          modestbranding: 1,
+          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+        },
         events: {
           onReady: (event: { target: YouTubePlayer }) => {
             if (cancelled) return;
@@ -180,6 +241,11 @@ export function MediaDictationPlayer({
               setDuration(event.target.getDuration() || 0);
               const supported = event.target.getAvailablePlaybackRates();
               if (supported?.length) setAvailableRates(supported);
+              event.target.cueVideoById({
+                videoId,
+                startSeconds: rangeRef.current.startTime,
+                endSeconds: rangeRef.current.endTime,
+              });
             } catch { setAvailableRates([1]); }
             pollRef.current = window.setInterval(() => {
               const player = playerRef.current;
